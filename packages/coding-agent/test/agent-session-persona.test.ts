@@ -100,4 +100,41 @@ describe("AgentSession persona swap", () => {
 		expect(session.systemPrompt).toEqual(["global"]);
 		expect(session.activePersonaName).toBeNull();
 	});
+	it("globalBlocks stays in sync with rebuilt prompt so persona swap uses current base (C1)", async () => {
+		// Construct session with a rebuildSystemPrompt that returns an expanded base
+		// (simulates what happens when MCP servers connect mid-session)
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["initial"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth-c1.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models-c1.yml"));
+		// Simulates a tool rebuild that adds MCP tool instructions to the base prompt
+		const expandedBase = ["initial", "mcp-tool-instructions"];
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+			rebuildSystemPrompt: async () => ({ systemPrompt: expandedBase }),
+		});
+
+		// Load initial persona
+		await session.applyAgentPersona(makePersona("sisyphus", "HOW-sisyphus"));
+		expect(session.systemPrompt).toEqual(["initial", "HOW-sisyphus"]);
+
+		// Simulate MCP tool discovery / tool rebuild
+		await session.refreshBaseSystemPrompt();
+		expect(session.systemPrompt).toEqual(["initial", "mcp-tool-instructions", "HOW-sisyphus"]);
+
+		// Switch to a different persona.
+		// C1 regression: if #globalBlocks was not updated at refresh, applyAgentPersona
+		// would reconstruct from the stale ["initial"] snapshot, producing
+		// ["initial", "HOW-beta"] — dropping the MCP tool instructions.
+		await session.applyAgentPersona(makePersona("beta", "HOW-beta"));
+		expect(session.systemPrompt).toEqual(["initial", "mcp-tool-instructions", "HOW-beta"]);
+	});
 });
