@@ -53,6 +53,8 @@ interface AppKeybindings {
 	"app.plan.toggle": true;
 	"app.history.search": true;
 	"app.stt.toggle": true;
+	"app.persona.cycleForward": true;
+	"app.persona.cycleBackward": true;
 }
 
 export type AppKeybinding = keyof AppKeybindings;
@@ -94,12 +96,20 @@ export const KEYBINDINGS = {
 		description: "Reset terminal display",
 	},
 	"app.thinking.cycle": {
-		defaultKeys: "shift+tab",
+		defaultKeys: "ctrl+tab",
 		description: "Cycle thinking level",
 	},
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",
 		description: "Toggle thinking mode",
+	},
+	"app.persona.cycleForward": {
+		defaultKeys: "tab",
+		description: "Cycle to next primary agent persona",
+	},
+	"app.persona.cycleBackward": {
+		defaultKeys: "shift+tab",
+		description: "Cycle to previous primary agent persona",
 	},
 	"app.model.cycleForward": {
 		defaultKeys: "ctrl+p",
