@@ -232,6 +232,7 @@ import {
 	type SecretObfuscator,
 } from "../secrets/obfuscator";
 import { invalidateHostMetadata } from "../ssh/connection-manager";
+import type { AgentDefinition } from "../task/types";
 import {
 	AUTO_THINKING,
 	type ConfiguredThinkingLevel,
@@ -337,7 +338,8 @@ export type AgentSessionEvent =
 			/** The level `auto` resolved to this turn, once classified. */
 			resolved?: Effort;
 	  }
-	| { type: "goal_updated"; goal: Goal | null; state?: GoalModeState };
+	| { type: "goal_updated"; goal: Goal | null; state?: GoalModeState }
+	| { type: "persona_changed"; persona: AgentDefinition | null };
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
@@ -1198,6 +1200,9 @@ export class AgentSession {
 	#reloadSshTool: (() => Promise<AgentTool | null>) | undefined;
 	#requestedToolNames: ReadonlySet<string> | undefined;
 	#baseSystemPrompt: string[];
+	#globalBlocks: string[];
+	#personaBlock: string | null;
+	#activePersona: AgentDefinition | null;
 	/**
 	 * Signature of the (toolNames, tool descriptions) tuple passed to the most
 	 * recent successful `rebuildSystemPrompt` call. Used to skip redundant rebuilds
@@ -1564,6 +1569,9 @@ export class AgentSession {
 		this.#getMcpServerInstructions = config.getMcpServerInstructions;
 		this.#reloadSshTool = config.reloadSshTool;
 		this.#baseSystemPrompt = this.agent.state.systemPrompt;
+		this.#globalBlocks = [...this.agent.state.systemPrompt];
+		this.#personaBlock = null;
+		this.#activePersona = null;
 		this.#promptModelKey = this.#currentPromptModelKey();
 		this.#mcpDiscoveryEnabled = config.mcpDiscoveryEnabled ?? false;
 		this.#setDiscoverableMCPTools(this.#collectDiscoverableMCPToolsFromRegistry());
@@ -4075,6 +4083,11 @@ export class AgentSession {
 		return this.agent.state;
 	}
 
+	/** Name of the active persona agent, or null when no persona is loaded. */
+	get activePersonaName(): string | null {
+		return this.#activePersona?.name ?? null;
+	}
+
 	/** Current model (may be undefined if not yet selected) */
 	get model(): Model | undefined {
 		return this.agent.state.model;
@@ -4535,6 +4548,14 @@ export class AgentSession {
 		);
 	}
 
+	#reapplyPersonaBlock(): void {
+		if (!this.#personaBlock) return;
+		if (this.#baseSystemPrompt[this.#baseSystemPrompt.length - 1] !== this.#personaBlock) {
+			this.#baseSystemPrompt = [...this.#baseSystemPrompt, this.#personaBlock];
+			this.agent.setSystemPrompt(this.#baseSystemPrompt);
+		}
+	}
+
 	async #applyActiveToolsByName(
 		toolNames: string[],
 		options?: { persistMCPSelection?: boolean; previousSelectedMCPToolNames?: string[] },
@@ -4588,6 +4609,7 @@ export class AgentSession {
 				const built = await this.#rebuildSystemPrompt(validToolNames, this.#toolRegistry);
 				this.#baseSystemPrompt = built.systemPrompt;
 				this.agent.setSystemPrompt(this.#baseSystemPrompt);
+				this.#reapplyPersonaBlock();
 				this.#lastAppliedToolSignature = signature;
 				this.#promptModelKey = this.#currentPromptModelKey();
 			}
@@ -4672,6 +4694,7 @@ export class AgentSession {
 		const built = await this.#rebuildSystemPrompt(activeToolNames, this.#toolRegistry);
 		this.#baseSystemPrompt = built.systemPrompt;
 		this.agent.setSystemPrompt(this.#baseSystemPrompt);
+		this.#reapplyPersonaBlock();
 		this.#promptModelKey = this.#currentPromptModelKey();
 		// Refresh the cached signature so a subsequent `#applyActiveToolsByName` with
 		// the same tool set does not re-rebuild on top of the explicit refresh we
@@ -6784,6 +6807,51 @@ export class AgentSession {
 		if (entry.explicitThinkingLevel && entry.thinkingLevel !== undefined) {
 			this.setThinkingLevel(entry.thinkingLevel);
 		}
+	}
+
+	/**
+	 * Apply a persona agent as the active HOW block.
+	 * Replaces the last prompt block with the persona's systemPrompt,
+	 * preserving global blocks. Also applies the persona's model if configured.
+	 */
+	async applyAgentPersona(def: AgentDefinition | null): Promise<void> {
+		logger.debug("applyAgentPersona called", { name: def?.name ?? null });
+		this.#activePersona = def;
+		this.#personaBlock = def?.systemPrompt ?? null;
+		this.#baseSystemPrompt = this.#personaBlock
+			? [...this.#globalBlocks, this.#personaBlock]
+			: [...this.#globalBlocks];
+		this.agent.setSystemPrompt(this.#baseSystemPrompt);
+		if (def?.model?.length) {
+			const availableModels = this.#modelRegistry.getAvailable();
+			const matchPreferences = getModelMatchPreferences(this.settings);
+			for (const modelStr of def.model) {
+				const resolved = resolveModelRoleValue(modelStr, availableModels, {
+					settings: this.settings,
+					matchPreferences,
+					modelRegistry: this.#modelRegistry,
+				});
+				if (resolved.model) {
+					await this.applyRoleModel({
+						role: "persona",
+						model: resolved.model,
+						thinkingLevel: resolved.thinkingLevel,
+						explicitThinkingLevel: resolved.explicitThinkingLevel,
+					});
+					break;
+				}
+			}
+		}
+		this.#emitPersonaChangedEvent(def);
+	}
+
+	#emitPersonaChangedEvent(def: AgentDefinition | null): void {
+		void this.sendCustomMessage<{ name: string | null }>({
+			customType: "persona_applied",
+			content: def?.name ?? "",
+			details: { name: def?.name ?? null },
+			display: false,
+		});
 	}
 
 	/**
