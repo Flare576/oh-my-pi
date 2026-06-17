@@ -1473,6 +1473,7 @@ export class InputController {
 			total: agents.length,
 			primary: primary.length,
 			names: primary.map(a => a.name),
+			orders: primary.map(a => ({ name: a.name, order: a.order })),
 		});
 		if (primary.length === 0) return;
 		const currentName = this.ctx.session.activePersonaName;

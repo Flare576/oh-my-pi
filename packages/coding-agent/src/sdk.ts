@@ -2657,7 +2657,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const { agents: discoveredAgentsForPersona } = await discoverAgents(cwd);
 			const primaryAgents = discoveredAgentsForPersona
 				.filter(a => a.mode === "primary")
-				.sort((a, b) => a.name.localeCompare(b.name));
+				.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
 			const namedAgent = options.initialAgentName
 				? (discoveredAgentsForPersona.find(a => a.name === options.initialAgentName) ?? null)
 				: null;
