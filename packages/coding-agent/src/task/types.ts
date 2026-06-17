@@ -253,6 +253,8 @@ export interface AgentDefinition {
 	autoloadSkills?: string[];
 	/** When `false`, the agent's `read` tool returns verbatim file content instead of structural summaries. */
 	readSummarize?: boolean;
+	/** Rotation category: `"primary"` agents appear in Tab rotation; `"subagent"` agents are never rotated. Omitted ≡ `"subagent"`. */
+	mode?: "primary" | "subagent";
 	source: AgentSource;
 	filePath?: string;
 }
