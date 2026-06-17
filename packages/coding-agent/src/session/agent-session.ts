@@ -5906,6 +5906,7 @@ export class AgentSession {
 				await this.reload();
 			},
 			getSystemPrompt: () => this.systemPrompt,
+			activePersonaName: this.activePersonaName,
 		};
 	}
 
