@@ -15,6 +15,7 @@ import type { InteractiveModeContext } from "../../modes/types";
 import manualContinuePrompt from "../../prompts/system/manual-continue.md" with { type: "text" };
 import { SKILL_PROMPT_MESSAGE_TYPE, type SkillPromptDetails, USER_INTERRUPT_LABEL } from "../../session/messages";
 import { executeBuiltinSlashCommand } from "../../slash-commands/builtin-registry";
+import { discoverAgents } from "../../task/discovery";
 import { isTinyTitleLocalModelKey } from "../../tiny/models";
 import { isLowSignalTitleInput } from "../../tiny/text";
 import { tinyTitleClient } from "../../tiny/title-client";
@@ -274,6 +275,20 @@ export class InputController {
 		this.ctx.editor.onSuspend = () => this.handleCtrlZ();
 		this.ctx.editor.setActionKeys("app.thinking.cycle", this.ctx.keybindings.getKeys("app.thinking.cycle"));
 		this.ctx.editor.onCycleThinkingLevel = () => this.cycleThinkingLevel();
+		this.ctx.editor.setActionKeys(
+			"app.persona.cycleForward",
+			this.ctx.keybindings.getKeys("app.persona.cycleForward"),
+		);
+		this.ctx.editor.onCyclePersonaForward = () => {
+			this.cyclePersona(1).catch(err => logger.error("cyclePersona(1) failed", { err: String(err) }));
+		};
+		this.ctx.editor.setActionKeys(
+			"app.persona.cycleBackward",
+			this.ctx.keybindings.getKeys("app.persona.cycleBackward"),
+		);
+		this.ctx.editor.onCyclePersonaBackward = () => {
+			this.cyclePersona(-1).catch(err => logger.error("cyclePersona(-1) failed", { err: String(err) }));
+		};
 		this.ctx.editor.setActionKeys("app.model.cycleForward", this.ctx.keybindings.getKeys("app.model.cycleForward"));
 		this.ctx.editor.onCycleModelForward = () => this.cycleRoleModel("forward");
 		this.ctx.editor.setActionKeys("app.model.cycleBackward", this.ctx.keybindings.getKeys("app.model.cycleBackward"));
@@ -1446,6 +1461,28 @@ export class InputController {
 			this.ctx.statusLine.invalidate();
 			this.ctx.updateEditorBorderColor();
 		}
+	}
+
+	async cyclePersona(dir: 1 | -1): Promise<void> {
+		logger.debug("cyclePersona called", { dir });
+		const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
+		const primary = agents.filter(a => a.mode === "primary").sort((a, b) => a.name.localeCompare(b.name));
+		logger.debug("cyclePersona agents found", {
+			total: agents.length,
+			primary: primary.length,
+			names: primary.map(a => a.name),
+		});
+		if (primary.length === 0) return;
+		const currentName = this.ctx.session.activePersonaName;
+		const currentIdx = primary.findIndex(a => a.name === currentName);
+		// currentIdx === -1 on first Tab → (-1 + 1 + N) % N = 0 → first agent
+		const nextIdx = (currentIdx + dir + primary.length) % primary.length;
+		logger.debug("cyclePersona switching", { from: currentName, to: primary[nextIdx].name });
+		await this.ctx.session.applyAgentPersona(primary[nextIdx]);
+		this.ctx.statusLine.invalidate();
+		this.ctx.updateEditorTopBorder();
+		this.ctx.ui.requestRender();
+		this.ctx.showStatus(`Persona: ${primary[nextIdx].name}`);
 	}
 
 	async cycleRoleModel(direction: "forward" | "backward" = "forward"): Promise<void> {

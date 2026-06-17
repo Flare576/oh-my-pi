@@ -26,6 +26,8 @@ type ConfigurableEditorAction = Extract<
 	| "app.clipboard.pasteImage"
 	| "app.clipboard.pasteTextRaw"
 	| "app.clipboard.copyPrompt"
+	| "app.persona.cycleForward"
+	| "app.persona.cycleBackward"
 >;
 
 const DEFAULT_ACTION_KEYS: Record<ConfigurableEditorAction, KeyId[]> = {
@@ -34,7 +36,7 @@ const DEFAULT_ACTION_KEYS: Record<ConfigurableEditorAction, KeyId[]> = {
 	"app.exit": ["ctrl+d"],
 	"app.suspend": ["ctrl+z"],
 	"app.display.reset": ["ctrl+l"],
-	"app.thinking.cycle": ["shift+tab"],
+	"app.thinking.cycle": ["ctrl+tab"],
 	"app.model.cycleForward": ["ctrl+p"],
 	"app.model.cycleBackward": ["shift+ctrl+p"],
 	"app.model.select": ["alt+m"],
@@ -48,6 +50,8 @@ const DEFAULT_ACTION_KEYS: Record<ConfigurableEditorAction, KeyId[]> = {
 	"app.clipboard.pasteImage": ["ctrl+v"],
 	"app.clipboard.pasteTextRaw": ["ctrl+shift+v", "alt+shift+v"],
 	"app.clipboard.copyPrompt": ["alt+shift+c"],
+	"app.persona.cycleForward": ["tab"],
+	"app.persona.cycleBackward": ["shift+tab"],
 };
 
 function buildMatchKeys(keys: readonly KeyId[]): Set<string> {
@@ -251,6 +255,8 @@ export class CustomEditor extends Editor {
 	onExit?: () => void;
 	onDisplayReset?: () => void;
 	onCycleThinkingLevel?: () => void;
+	onCyclePersonaForward?: () => void;
+	onCyclePersonaBackward?: () => void;
 	onCycleModelForward?: () => void;
 	onCycleModelBackward?: () => void;
 	onSelectModel?: () => void;
@@ -551,6 +557,17 @@ export class CustomEditor extends Editor {
 			// Intercept configured thinking level cycling
 			if (this.#matchesAction(canonical, "app.thinking.cycle") && this.onCycleThinkingLevel) {
 				this.onCycleThinkingLevel();
+				return;
+			}
+
+			// Intercept configured persona cycle forward
+			if (this.#matchesAction(canonical, "app.persona.cycleForward") && this.onCyclePersonaForward) {
+				this.onCyclePersonaForward();
+				return;
+			}
+			// Intercept configured persona cycle backward
+			if (this.#matchesAction(canonical, "app.persona.cycleBackward") && this.onCyclePersonaBackward) {
+				this.onCyclePersonaBackward();
 				return;
 			}
 
