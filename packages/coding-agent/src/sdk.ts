@@ -144,6 +144,7 @@ import {
 	buildSystemPromptToolMetadata,
 	loadProjectContextFiles as loadContextFilesInternal,
 } from "./system-prompt";
+import { discoverAgents } from "./task/discovery";
 import { AgentOutputManager } from "./task/output-manager";
 import {
 	AUTO_THINKING,
@@ -550,6 +551,8 @@ export interface CreateAgentSessionOptions {
 
 	/** Whether to auto-approve all tool calls (--auto-approve CLI flag). Default: false */
 	autoApprove?: boolean;
+	/** Agent name from --agent CLI flag: auto-load this named agent as the initial persona. */
+	initialAgentName?: string;
 }
 
 /** Result from createAgentSession */
@@ -2648,6 +2651,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			advisorReadOnlyTools,
 		});
 		hasSession = true;
+		// Auto-load initial persona for top-level sessions
+		if (taskDepth === 0) {
+			const { agents: discoveredAgentsForPersona } = await discoverAgents(cwd);
+			const primaryAgents = discoveredAgentsForPersona
+				.filter(a => a.mode === "primary")
+				.sort((a, b) => a.name.localeCompare(b.name));
+			const namedAgent = options.initialAgentName
+				? (discoveredAgentsForPersona.find(a => a.name === options.initialAgentName) ?? null)
+				: null;
+			const startAgent = namedAgent ?? primaryAgents[0] ?? null;
+			if (startAgent) await session.applyAgentPersona(startAgent);
+		}
 		if (asyncJobManager) {
 			session.yieldQueue.register<AsyncResultEntry>("async-result", {
 				isStale: entry => asyncJobManager.isDeliverySuppressed(entry.jobId),

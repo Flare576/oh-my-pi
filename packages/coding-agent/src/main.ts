@@ -915,6 +915,10 @@ async function buildSessionOptions(
 		options.additionalExtensionPaths = [];
 	}
 
+	if (parsed.agent) {
+		options.initialAgentName = parsed.agent;
+	}
+
 	return { options, titleSystemPrompt };
 }
 

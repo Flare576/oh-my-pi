@@ -44,6 +44,7 @@ export interface Args {
 	sessionDir?: string;
 	providerSessionId?: string;
 	fork?: string;
+	agent?: string;
 	/** Collab link to join at startup (set by the `join` subcommand; no CLI flag). */
 	join?: string;
 	models?: string[];
