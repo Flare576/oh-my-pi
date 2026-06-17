@@ -560,13 +560,22 @@ export class CustomEditor extends Editor {
 				return;
 			}
 
-			// Intercept configured persona cycle forward
-			if (this.#matchesAction(canonical, "app.persona.cycleForward") && this.onCyclePersonaForward) {
+			// Intercept configured persona cycle forward/backward.
+			// When the autocomplete popup is visible, Tab's job is to advance the
+			// completion — give it first dibs, same pattern as ESC (#1655).
+			if (
+				this.#matchesAction(canonical, "app.persona.cycleForward") &&
+				this.onCyclePersonaForward &&
+				!this.isShowingAutocomplete()
+			) {
 				this.onCyclePersonaForward();
 				return;
 			}
-			// Intercept configured persona cycle backward
-			if (this.#matchesAction(canonical, "app.persona.cycleBackward") && this.onCyclePersonaBackward) {
+			if (
+				this.#matchesAction(canonical, "app.persona.cycleBackward") &&
+				this.onCyclePersonaBackward &&
+				!this.isShowingAutocomplete()
+			) {
 				this.onCyclePersonaBackward();
 				return;
 			}
