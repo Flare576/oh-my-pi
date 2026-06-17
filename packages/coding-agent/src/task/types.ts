@@ -255,6 +255,8 @@ export interface AgentDefinition {
 	readSummarize?: boolean;
 	/** Rotation category: `"primary"` agents appear in Tab rotation; `"subagent"` agents are never rotated. Omitted ≡ `"subagent"`. */
 	mode?: "primary" | "subagent";
+	/** Tab-cycle position. Lower = earlier. Agents without order sort alphabetically after all ordered agents. */
+	order?: number;
 	source: AgentSource;
 	filePath?: string;
 }

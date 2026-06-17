@@ -233,6 +233,7 @@ export interface ParsedAgentFields {
 	readSummarize?: boolean;
 	blocking?: boolean;
 	mode?: "primary" | "subagent";
+	order?: number;
 }
 
 /**
@@ -290,6 +291,8 @@ export function parseAgentFields(frontmatter: Record<string, unknown>): ParsedAg
 		?.map(s => s.trim())
 		.filter(Boolean);
 	const mode = frontmatter.mode === "primary" || frontmatter.mode === "subagent" ? frontmatter.mode : undefined;
+	const orderRaw = frontmatter.order;
+	const order = typeof orderRaw === "number" && Number.isFinite(orderRaw) ? orderRaw : undefined;
 	return {
 		name,
 		description,
@@ -302,6 +305,7 @@ export function parseAgentFields(frontmatter: Record<string, unknown>): ParsedAg
 		autoloadSkills,
 		readSummarize,
 		mode,
+		order,
 	};
 }
 

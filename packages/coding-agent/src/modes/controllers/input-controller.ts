@@ -1466,7 +1466,9 @@ export class InputController {
 	async cyclePersona(dir: 1 | -1): Promise<void> {
 		logger.debug("cyclePersona called", { dir });
 		const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
-		const primary = agents.filter(a => a.mode === "primary").sort((a, b) => a.name.localeCompare(b.name));
+		const primary = agents
+			.filter(a => a.mode === "primary")
+			.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
 		logger.debug("cyclePersona agents found", {
 			total: agents.length,
 			primary: primary.length,
