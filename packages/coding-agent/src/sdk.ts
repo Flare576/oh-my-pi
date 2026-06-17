@@ -2661,6 +2661,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const namedAgent = options.initialAgentName
 				? (discoveredAgentsForPersona.find(a => a.name === options.initialAgentName) ?? null)
 				: null;
+			if (options.initialAgentName && !namedAgent) {
+				logger.warn(`--agent: no agent named "${options.initialAgentName}" found; falling back to first primary`);
+			}
 			const startAgent = namedAgent ?? primaryAgents[0] ?? null;
 			if (startAgent) await session.applyAgentPersona(startAgent);
 		}

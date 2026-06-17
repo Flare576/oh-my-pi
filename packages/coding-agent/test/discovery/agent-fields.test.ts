@@ -132,4 +132,58 @@ describe("parseAgentFields", () => {
 	test("returns undefined readSummarize when field absent", () => {
 		expect(parseAgentFields({ name: "explore", description: "desc" })?.readSummarize).toBeUndefined();
 	});
+
+	describe("mode field", () => {
+		test("parses mode: primary", () => {
+			const fields = parseAgentFields({ name: "sisyphus", description: "desc", mode: "primary" });
+			expect(fields?.mode).toBe("primary");
+		});
+
+		test("parses mode: subagent", () => {
+			const fields = parseAgentFields({ name: "explore", description: "desc", mode: "subagent" });
+			expect(fields?.mode).toBe("subagent");
+		});
+
+		test("rejects invalid mode → undefined", () => {
+			const fields = parseAgentFields({ name: "x", description: "d", mode: "primary2" });
+			expect(fields?.mode).toBeUndefined();
+		});
+
+		test("returns undefined mode when field absent", () => {
+			const fields = parseAgentFields({ name: "x", description: "d" });
+			expect(fields?.mode).toBeUndefined();
+		});
+	});
+
+	describe("order field", () => {
+		test("parses finite integer order", () => {
+			const fields = parseAgentFields({ name: "x", description: "d", order: 1 });
+			expect(fields?.order).toBe(1);
+		});
+
+		test("parses fractional order", () => {
+			const fields = parseAgentFields({ name: "x", description: "d", order: 1.5 });
+			expect(fields?.order).toBe(1.5);
+		});
+
+		test("rejects string order → undefined", () => {
+			const fields = parseAgentFields({ name: "x", description: "d", order: "1" });
+			expect(fields?.order).toBeUndefined();
+		});
+
+		test("rejects NaN order → undefined", () => {
+			const fields = parseAgentFields({ name: "x", description: "d", order: NaN });
+			expect(fields?.order).toBeUndefined();
+		});
+
+		test("rejects Infinity order → undefined", () => {
+			const fields = parseAgentFields({ name: "x", description: "d", order: Infinity });
+			expect(fields?.order).toBeUndefined();
+		});
+
+		test("returns undefined order when field absent", () => {
+			const fields = parseAgentFields({ name: "x", description: "d" });
+			expect(fields?.order).toBeUndefined();
+		});
+	});
 });

@@ -80,6 +80,7 @@ export class InputController {
 	#enhancedPaste?: EnhancedPasteController;
 	#focusedLeftTapListenerInstalled = false;
 	#btwBranchListenerInstalled = false;
+	#personaCycleInFlight = false;
 	// Tap counter for the double-← gesture; reset whenever a quiet gap
 	// (>= LEFT_DOUBLE_TAP_MAX_GAP_MS) starts a fresh sequence. See
 	// #detectLeftDoubleTap.
@@ -1464,28 +1465,37 @@ export class InputController {
 	}
 
 	async cyclePersona(dir: 1 | -1): Promise<void> {
-		logger.debug("cyclePersona called", { dir });
-		const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
-		const primary = agents
-			.filter(a => a.mode === "primary")
-			.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
-		logger.debug("cyclePersona agents found", {
-			total: agents.length,
-			primary: primary.length,
-			names: primary.map(a => a.name),
-			orders: primary.map(a => ({ name: a.name, order: a.order })),
-		});
-		if (primary.length === 0) return;
-		const currentName = this.ctx.session.activePersonaName;
-		const currentIdx = primary.findIndex(a => a.name === currentName);
-		// currentIdx === -1 on first Tab → (-1 + 1 + N) % N = 0 → first agent
-		const nextIdx = (currentIdx + dir + primary.length) % primary.length;
-		logger.debug("cyclePersona switching", { from: currentName, to: primary[nextIdx].name });
-		await this.ctx.session.applyAgentPersona(primary[nextIdx]);
-		this.ctx.statusLine.invalidate();
-		this.ctx.updateEditorTopBorder();
-		this.ctx.ui.requestRender();
-		this.ctx.showStatus(`Persona: ${primary[nextIdx].name}`);
+		// I1: guard against rapid Tab presses racing through the async discoverAgents call
+		if (this.#personaCycleInFlight) return;
+		this.#personaCycleInFlight = true;
+		try {
+			logger.debug("cyclePersona called", { dir });
+			const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
+			const primary = agents
+				.filter(a => a.mode === "primary")
+				.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
+			logger.debug("cyclePersona agents found", {
+				total: agents.length,
+				primary: primary.length,
+				names: primary.map(a => a.name),
+				orders: primary.map(a => ({ name: a.name, order: a.order })),
+			});
+			if (primary.length === 0) return;
+			const currentName = this.ctx.session.activePersonaName;
+			const currentIdx = primary.findIndex(a => a.name === currentName);
+			// I4: first forward Tab → index 0 ✓ (−1+1+N)%N=0
+			// first backward Shift+Tab → index N-1 ✓ (−1+N−1+N) not (−1−1+N)
+			const baseIdx = currentIdx === -1 && dir === -1 ? primary.length : currentIdx;
+			const nextIdx = (((baseIdx + dir) % primary.length) + primary.length) % primary.length;
+			logger.debug("cyclePersona switching", { from: currentName, to: primary[nextIdx].name });
+			await this.ctx.session.applyAgentPersona(primary[nextIdx]);
+			this.ctx.statusLine.invalidate();
+			this.ctx.updateEditorTopBorder();
+			this.ctx.ui.requestRender();
+			this.ctx.showStatus(`Persona: ${primary[nextIdx].name}`);
+		} finally {
+			this.#personaCycleInFlight = false;
+		}
 	}
 
 	async cycleRoleModel(direction: "forward" | "backward" = "forward"): Promise<void> {

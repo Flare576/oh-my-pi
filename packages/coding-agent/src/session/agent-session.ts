@@ -4608,6 +4608,7 @@ export class AgentSession {
 			if (signature !== this.#lastAppliedToolSignature) {
 				const built = await this.#rebuildSystemPrompt(validToolNames, this.#toolRegistry);
 				this.#baseSystemPrompt = built.systemPrompt;
+				this.#globalBlocks = built.systemPrompt; // C1: keep in sync so Tab doesn't drop MCP tool instructions
 				this.agent.setSystemPrompt(this.#baseSystemPrompt);
 				this.#reapplyPersonaBlock();
 				this.#lastAppliedToolSignature = signature;
@@ -4693,6 +4694,7 @@ export class AgentSession {
 		const activeToolNames = this.getActiveToolNames();
 		const built = await this.#rebuildSystemPrompt(activeToolNames, this.#toolRegistry);
 		this.#baseSystemPrompt = built.systemPrompt;
+		this.#globalBlocks = built.systemPrompt; // C1: keep in sync so Tab doesn't drop MCP tool instructions
 		this.agent.setSystemPrompt(this.#baseSystemPrompt);
 		this.#reapplyPersonaBlock();
 		this.#promptModelKey = this.#currentPromptModelKey();
