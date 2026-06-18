@@ -277,3 +277,23 @@ describe("InputController.cyclePersona", () => {
 		expect(showStatus).toHaveBeenCalledWith("Persona: sisyphus");
 	});
 });
+
+describe("no-primary Shift+Tab preserves thinking-level cycle", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("cyclePersona(-1) returns early without applying a persona when no primary agents exist", async () => {
+		const { ctx, applyAgentPersona } = createContext();
+		const controller = new InputController(ctx);
+
+		vi.spyOn(discovery, "discoverAgents").mockResolvedValue({
+			agents: [makeAgent("worker", "subagent")],
+			projectAgentsDir: null,
+		});
+
+		await controller.cyclePersona(-1);
+
+		expect(applyAgentPersona).not.toHaveBeenCalled();
+	});
+});

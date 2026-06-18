@@ -581,6 +581,12 @@ export class CustomEditor extends Editor {
 				editorEmpty
 			) {
 				if (this.onCyclePersonaBackward() !== false) return;
+				// No primary agents: fall through to thinking-level cycle so projects
+				// without mode:primary agents preserve the prior Shift+Tab behavior.
+				if (this.onCycleThinkingLevel) {
+					this.onCycleThinkingLevel();
+					return;
+				}
 			}
 
 			// Intercept configured interrupt shortcut.

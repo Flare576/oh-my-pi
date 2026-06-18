@@ -79,5 +79,39 @@ describe("CustomEditor keybindings", () => {
 			editor.handleInput("\x1b[Z");
 			expect(onCycleBackward).not.toHaveBeenCalled();
 		});
+
+		it("falls through to base Tab completion when onCyclePersonaForward returns false", () => {
+			const editor = new CustomEditor(getEditorTheme());
+			const onCycle = vi.fn(() => false as false);
+			editor.onCyclePersonaForward = onCycle;
+			editor.handleInput("\t");
+			// Callback fired once — the "no personas" signal was received
+			expect(onCycle).toHaveBeenCalledTimes(1);
+			// Base editor Tab completion opens a suggestion popup rather than inserting a
+			// literal tab character, so the text buffer stays empty.
+			expect(editor.getText()).toBe("");
+		});
+
+		it("falls through to thinking-level cycle when onCyclePersonaBackward returns false", () => {
+			const editor = new CustomEditor(getEditorTheme());
+			const onCycleBackward = vi.fn(() => false as false);
+			const onCycleThinking = vi.fn();
+			editor.onCyclePersonaBackward = onCycleBackward;
+			editor.onCycleThinkingLevel = onCycleThinking;
+			editor.handleInput("\x1b[Z"); // Shift+Tab
+			expect(onCycleBackward).toHaveBeenCalledTimes(1);
+			expect(onCycleThinking).toHaveBeenCalledTimes(1);
+		});
+
+		it("does NOT call thinking cycle when persona backward succeeds (returns undefined)", () => {
+			const editor = new CustomEditor(getEditorTheme());
+			const onCycleBackward = vi.fn(); // returns undefined — success
+			const onCycleThinking = vi.fn();
+			editor.onCyclePersonaBackward = onCycleBackward;
+			editor.onCycleThinkingLevel = onCycleThinking;
+			editor.handleInput("\x1b[Z");
+			expect(onCycleBackward).toHaveBeenCalledTimes(1);
+			expect(onCycleThinking).not.toHaveBeenCalled();
+		});
 	});
 });
