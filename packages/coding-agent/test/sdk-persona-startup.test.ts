@@ -1,0 +1,157 @@
+/**
+ * Contract tests for the SDK startup persona loading path (createAgentSession).
+ *
+ * Oracle: when `taskDepth === 0` (top-level session), createAgentSession must:
+ *   1. Auto-load the first primary agent (by order) when the session has no stamps
+ *   2. Restore the last-stamped agent on resume (case-insensitive match)
+ *   3. Fall back to the first primary when the stamped agent no longer exists on disk
+ *   4. Prefer --agent flag over any stamp or default
+ *   5. Skip subagent-mode agents entirely (only primary agents are eligible)
+ *
+ * Tested by spying on discoverAgents so no agent files need to live on disk.
+ */
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
+import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
+import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
+import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
+import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
+import type { AgentDefinition } from "@oh-my-pi/pi-coding-agent/task/types";
+
+function makeAgent(
+	name: string,
+	mode: "primary" | "subagent" = "primary",
+	order?: number,
+): AgentDefinition {
+	return {
+		name,
+		description: `${name} agent`,
+		systemPrompt: `You are ${name}.`,
+		mode,
+		order,
+		source: "user",
+		tools: [],
+	};
+}
+
+function userMsg() {
+	return { role: "user" as const, content: "hello", timestamp: Date.now() };
+}
+
+describe("createAgentSession — startup persona loading", () => {
+	let authStorage: AuthStorage;
+	let modelRegistry: ModelRegistry;
+	const sessions: Array<{ dispose(): Promise<void> }> = [];
+
+	beforeAll(async () => {
+		authStorage = await AuthStorage.create(":memory:");
+		modelRegistry = new ModelRegistry(authStorage);
+	});
+
+	afterAll(() => {
+		authStorage.close();
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		for (const s of sessions.splice(0)) {
+			await s.dispose();
+		}
+	});
+
+	async function create(
+		sessionManager: SessionManager,
+		agents: AgentDefinition[],
+		initialAgentName?: string,
+	) {
+		vi.spyOn(discovery, "discoverAgents").mockResolvedValue({
+			agents,
+			projectAgentsDir: null,
+		});
+		const { session } = await createAgentSession({
+			cwd: "/tmp/persona-startup-test",
+			sessionManager,
+			modelRegistry,
+			settings: Settings.isolated(),
+			disableExtensionDiscovery: true,
+			skills: [],
+			contextFiles: [],
+			promptTemplates: [],
+			...(initialAgentName ? { initialAgentName } : {}),
+		});
+		sessions.push(session);
+		return session;
+	}
+
+	it("loads the first primary agent (by order) when session has no stamps", async () => {
+		const sm = SessionManager.inMemory();
+		// Agents deliberately out-of-order — sorted by order asc
+		const session = await create(sm, [
+			makeAgent("gamma", "primary", 3),
+			makeAgent("alpha", "primary", 1),
+			makeAgent("beta", "primary", 2),
+		]);
+		expect(session.activePersonaName).toBe("alpha");
+	});
+
+	it("does not load any persona when no primary agents exist", async () => {
+		const sm = SessionManager.inMemory();
+		const session = await create(sm, [makeAgent("worker", "subagent")]);
+		expect(session.activePersonaName).toBeNull();
+	});
+
+	it("ignores subagent-mode agents when choosing the default", async () => {
+		const sm = SessionManager.inMemory();
+		const session = await create(sm, [
+			makeAgent("worker", "subagent", 0), // order 0 but subagent — must be skipped
+			makeAgent("boss", "primary", 1),
+		]);
+		expect(session.activePersonaName).toBe("boss");
+	});
+
+	it("restores the last-stamped agent on resume", async () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(userMsg(), "beta");
+
+		const session = await create(sm, [
+			makeAgent("alpha", "primary", 1),
+			makeAgent("beta", "primary", 2),
+		]);
+		expect(session.activePersonaName).toBe("beta");
+	});
+
+	it("stamp lookup is case-insensitive", async () => {
+		const sm = SessionManager.inMemory();
+		// Stamped with mixed case...
+		sm.appendMessage(userMsg(), "Beta");
+
+		// ...but agent definition uses lowercase
+		const session = await create(sm, [makeAgent("beta", "primary", 1)]);
+		expect(session.activePersonaName).toBe("beta");
+	});
+
+	it("falls back to first primary when the stamped agent no longer exists on disk", async () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(userMsg(), "deleted-agent");
+
+		// "deleted-agent" is not in the discovered list anymore
+		const session = await create(sm, [
+			makeAgent("alpha", "primary", 1),
+			makeAgent("beta", "primary", 2),
+		]);
+		expect(session.activePersonaName).toBe("alpha");
+	});
+
+	it("--agent flag takes precedence over session stamp and defaults", async () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(userMsg(), "beta"); // stamp says beta
+
+		const session = await create(
+			sm,
+			[makeAgent("alpha", "primary", 1), makeAgent("beta", "primary", 2)],
+			"alpha", // --agent says alpha
+		);
+		expect(session.activePersonaName).toBe("alpha");
+	});
+});
