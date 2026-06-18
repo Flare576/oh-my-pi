@@ -2682,7 +2682,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// recordModelChange: false — startup restore should not write a model_change
 			// session entry; reopening the same session would otherwise accumulate stale
 			// entries before the user sends anything.
-			if (startAgent) await session.applyAgentPersona(startAgent, { recordModelChange: false });
+			if (startAgent) {
+				const { modelFailed } = await session.applyAgentPersona(startAgent, { recordModelChange: false });
+				if (modelFailed) {
+					logger.warn(`--agent: persona "${startAgent.name}" model not available — using current model`, {
+						err: modelFailed,
+					});
+					session.emitNotice("warning", `Persona "${startAgent.name}" loaded — model not available, using current model`);
+				}
+			}
 		}
 		if (asyncJobManager) {
 			session.yieldQueue.register<AsyncResultEntry>("async-result", {

@@ -68,6 +68,7 @@ import { TranscriptBlock } from "../components/transcript-container";
 import { TreeSelectorComponent } from "../components/tree-selector";
 import { UserMessageSelectorComponent } from "../components/user-message-selector";
 import type { SessionObserverRegistry } from "../session-observer-registry";
+import { sanitizeStatusText } from "../shared";
 import { buildCopyTargets } from "../utils/copy-targets";
 
 const MANUAL_LOGIN_TIP = "Tip: You can complete pairing with /login <redirect URL>.";
@@ -917,7 +918,8 @@ export class SelectorController {
 		const agentDef = lastAgentName
 			? (primaryAgents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
 			: (primaryAgents[0] ?? null);
-		await this.ctx.session.applyAgentPersona(agentDef, { recordModelChange: false });
+		const { modelFailed } = await this.ctx.session.applyAgentPersona(agentDef, { recordModelChange: false });
+		const personaWarning = modelFailed && agentDef ? ` (persona "${sanitizeStatusText(agentDef.name)}" model unavailable)` : "";
 		// Refresh terminal title to reflect the resumed session name / cwd.
 		this.#refreshSessionTerminalTitle();
 
@@ -925,7 +927,7 @@ export class SelectorController {
 		this.ctx.chatContainer.clear();
 		this.ctx.renderInitialMessages({ clearTerminalHistory: true });
 		await this.ctx.reloadTodos();
-		this.ctx.showStatus(movedProject ? `Resumed session in ${shortenPath(newCwd)}` : "Resumed session");
+		this.ctx.showStatus((movedProject ? `Resumed session in ${shortenPath(newCwd)}` : "Resumed session") + personaWarning);
 	}
 
 	async handleSessionDeleteCommand(): Promise<void> {

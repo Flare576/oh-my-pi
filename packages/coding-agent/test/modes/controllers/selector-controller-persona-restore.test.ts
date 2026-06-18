@@ -83,7 +83,9 @@ describe("SelectorController.handleResumeSession — persona restore", () => {
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
 		expect(applyAgentPersona).toHaveBeenCalledTimes(1);
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "beta" }), { recordModelChange: false });
+		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "beta" }), {
+			recordModelChange: false,
+		});
 	});
 
 	it("stamp lookup is case-insensitive", async () => {
@@ -97,7 +99,9 @@ describe("SelectorController.handleResumeSession — persona restore", () => {
 		const controller = new SelectorController(ctx);
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "beta" }), { recordModelChange: false });
+		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "beta" }), {
+			recordModelChange: false,
+		});
 	});
 
 	it("falls back to first primary when stamp does not match any known agent", async () => {
@@ -111,7 +115,9 @@ describe("SelectorController.handleResumeSession — persona restore", () => {
 		const controller = new SelectorController(ctx);
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }), { recordModelChange: false });
+		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }), {
+			recordModelChange: false,
+		});
 	});
 
 	it("loads first primary when session has no stamp at all", async () => {
@@ -125,7 +131,9 @@ describe("SelectorController.handleResumeSession — persona restore", () => {
 		const controller = new SelectorController(ctx);
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }), { recordModelChange: false });
+		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }), {
+			recordModelChange: false,
+		});
 	});
 
 	it("calls applyAgentPersona(null) when no primary agents exist", async () => {

@@ -19,7 +19,12 @@ import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manage
 import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
 import type { AgentDefinition } from "@oh-my-pi/pi-coding-agent/task/types";
 
-function makeAgent(name: string, mode: "primary" | "subagent" = "primary", order?: number): AgentDefinition {
+function makeAgent(
+	name: string,
+	mode: "primary" | "subagent" = "primary",
+	order?: number,
+	models?: string[],
+): AgentDefinition {
 	return {
 		name,
 		description: `${name} agent`,
@@ -28,6 +33,7 @@ function makeAgent(name: string, mode: "primary" | "subagent" = "primary", order
 		order,
 		source: "user",
 		tools: [],
+		...(models ? { model: models } : {}),
 	};
 }
 
@@ -139,5 +145,25 @@ describe("createAgentSession — startup persona loading", () => {
 			"alpha", // --agent says alpha
 		);
 		expect(session.activePersonaName).toBe("alpha");
+	});
+
+	it("does not write model_change or thinking_level_change on startup restore", async () => {
+		// Enable anthropic auth so the persona's model string can resolve
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+
+		const sm = SessionManager.inMemory();
+		// Stamp a persona in history so startup uses the restore path (not default-first)
+		sm.appendMessage(userMsg(), "alpha");
+		const stampCount = sm.getBranch().length;
+
+		await create(sm, [
+			// Model with explicit thinking (:high) exercises both the model_change and
+			// thinking_level_change guards added by I3.
+			makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5:high"]),
+		]);
+
+		const newEntries = sm.getBranch().slice(stampCount);
+		expect(newEntries.filter(e => e.type === "model_change")).toHaveLength(0);
+		expect(newEntries.filter(e => e.type === "thinking_level_change")).toHaveLength(0);
 	});
 });
