@@ -34,7 +34,11 @@ function makeAgent(name: string, mode: "primary" | "subagent" = "primary", order
 }
 
 /** Three ordered primary agents used by most tests. */
-const THREE_AGENTS = [makeAgent("alpha", "primary", 1), makeAgent("beta", "primary", 2), makeAgent("gamma", "primary", 3)];
+const THREE_AGENTS = [
+	makeAgent("alpha", "primary", 1),
+	makeAgent("beta", "primary", 2),
+	makeAgent("gamma", "primary", 3),
+];
 
 function createContext() {
 	// Mutable state shared between the session mock and the test

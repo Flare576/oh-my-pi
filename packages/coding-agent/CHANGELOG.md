@@ -323,6 +323,10 @@
 - Registered the `Advisor` group in the `model` settings tab so advisor settings render correctly in the settings panel.
 - Fixed Windows bash path handling so MSYS/Git-Bash drive aliases like `/d/project` and WSL-style `/mnt/d/project` normalize to native drive paths consistently across the bash tool cwd validation and brush filesystem builtins ([#2634](https://github.com/can1357/oh-my-pi/issues/2634)).
 
+### Added
+
+- `agent` field on `SessionMessageEntry`: when an agent definition is active, its name is recorded on all persisted message entries — LLM responses, bash/python results, and todo-command developer messages (mirrors the `agent` field on OpenCode message rows). Field is optional; vanilla Pi sessions and OMP sessions without an active agent definition are unchanged.
+
 ## [15.13.3] - 2026-06-15
 
 ### Added
