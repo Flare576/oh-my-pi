@@ -166,6 +166,16 @@ export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
 	attribution?: MessageAttribution;
 }
 
+/**
+ * Records a user-initiated persona switch that has not yet produced a stamped
+ * message. Scanned by getLastAgentName() so that resume picks up the correct
+ * persona even when the user switched and exited before sending anything.
+ */
+export interface PersonaChangeEntry extends SessionEntryBase {
+	type: "persona_change";
+	personaName: string;
+}
+
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */
 export type SessionEntry =
 	| SessionMessageEntry
@@ -180,7 +190,8 @@ export type SessionEntry =
 	| TtsrInjectionEntry
 	| MCPToolSelectionEntry
 	| SessionInitEntry
-	| ModeChangeEntry;
+	| ModeChangeEntry
+	| PersonaChangeEntry;
 
 /** Raw file entry (includes header) */
 export type FileEntry = SessionHeader | SessionEntry;

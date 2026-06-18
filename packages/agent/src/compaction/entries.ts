@@ -109,6 +109,11 @@ export interface ModeChangeEntry extends SessionEntryBase {
 	data?: Record<string, unknown>;
 }
 
+export interface PersonaChangeEntry extends SessionEntryBase {
+	type: "persona_change";
+	personaName: string;
+}
+
 export interface CustomCompactionSessionEntries {}
 
 export type SessionEntry =
@@ -125,6 +130,7 @@ export type SessionEntry =
 	| MCPToolSelectionEntry
 	| SessionInitEntry
 	| ModeChangeEntry
+	| PersonaChangeEntry
 	| CustomCompactionSessionEntries[keyof CustomCompactionSessionEntries];
 
 export interface ReadonlySessionManager {

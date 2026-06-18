@@ -26,6 +26,7 @@ import {
 	type ModeChangeEntry,
 	type ModelChangeEntry,
 	type NewSessionOptions,
+	type PersonaChangeEntry,
 	type ServiceTierChangeEntry,
 	type SessionEntry,
 	type SessionHeader,
@@ -1182,6 +1183,18 @@ export class SessionManager {
 		return entry.id;
 	}
 
+	/**
+	 * Append a persona-change record as a child of the current leaf, then advance
+	 * the leaf. Written on every user-initiated persona cycle so that
+	 * getLastAgentName() can recover the active persona on resume even when the
+	 * user switched and exited before sending any message.
+	 */
+	appendPersonaChange(personaName: string): string {
+		const entry: PersonaChangeEntry = { type: "persona_change", ...this.#freshEntryFields(), personaName };
+		this.#recordEntry(entry);
+		return entry.id;
+	}
+
 	appendSessionInit(init: {
 		systemPrompt: string;
 		task: string;
@@ -1318,13 +1331,16 @@ export class SessionManager {
 		return undefined;
 	}
 
-	/** Returns the name of the agent that last produced a stamped message entry in
-	 * this session's branch, or `undefined` when no entry carries an agent name.
-	 * Used at session-resume time to restore the active agent definition. */
+	/** Returns the name of the most recently active agent in this session's branch.
+	 * Scans backward for the most recent persona_change entry (written on every
+	 * user-initiated Tab cycle) or, for older sessions without that entry, falls
+	 * back to the agent field on the last stamped message.
+	 * Returns `undefined` when no persona has ever been selected. */
 	getLastAgentName(): string | undefined {
 		const branch = this.getBranch();
 		for (let index = branch.length - 1; index >= 0; index--) {
 			const entry = branch[index];
+			if (entry.type === "persona_change") return (entry as PersonaChangeEntry).personaName;
 			if (entry.type === "message" && typeof (entry as SessionMessageEntry).agent === "string") {
 				return (entry as SessionMessageEntry).agent;
 			}

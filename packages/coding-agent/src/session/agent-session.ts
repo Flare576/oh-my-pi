@@ -6894,6 +6894,13 @@ export class AgentSession {
 		this.#baseSystemPrompt =
 			this.#personaBlock !== null ? [...this.#globalBlocks, this.#personaBlock] : [...this.#globalBlocks];
 		this.agent.setSystemPrompt(this.#baseSystemPrompt);
+		// Record the persona switch so getLastAgentName() can recover it on resume
+		// even when the user switched and exited before sending any message.
+		// Only for user-initiated actions (recordModelChange: true); restore paths
+		// already have the correct entry in history.
+		if (def && options?.recordModelChange !== false) {
+			this.sessionManager.appendPersonaChange(def.name);
+		}
 		this.#emitPersonaChangedEvent(def);
 		return modelFailed !== undefined ? { modelFailed } : {};
 	}

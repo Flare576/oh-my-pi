@@ -72,4 +72,34 @@ describe("SessionManager.getLastAgentName", () => {
 		sm.appendModelChange("anthropic/claude-sonnet-4-5", "default");
 		expect(sm.getLastAgentName()).toBeUndefined();
 	});
+
+	it("returns persona_change name even when no message follows", () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(userMsg(), "alpha");
+		sm.appendPersonaChange("beta"); // Tab-cycle to beta, no message sent yet
+		expect(sm.getLastAgentName()).toBe("beta");
+	});
+
+	it("persona_change wins over prior message stamps", () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(userMsg(), "alpha");
+		sm.appendMessage(userMsg(), "alpha");
+		sm.appendPersonaChange("beta"); // user Tab-cycled after last message
+		expect(sm.getLastAgentName()).toBe("beta");
+	});
+
+	it("later message stamp wins over earlier persona_change", () => {
+		const sm = SessionManager.inMemory();
+		sm.appendPersonaChange("beta");
+		sm.appendMessage(userMsg(), "gamma"); // message stamped after the cycle
+		expect(sm.getLastAgentName()).toBe("gamma");
+	});
+
+	it("most recent persona_change wins over earlier ones", () => {
+		const sm = SessionManager.inMemory();
+		sm.appendPersonaChange("alpha");
+		sm.appendPersonaChange("beta");
+		sm.appendPersonaChange("gamma");
+		expect(sm.getLastAgentName()).toBe("gamma");
+	});
 });
