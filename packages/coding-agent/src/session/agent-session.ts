@@ -11261,6 +11261,12 @@ export class AgentSession {
 			if (this.#resolvePersona) {
 				const name = this.sessionManager.getLastAgentName();
 				const cwd = this.sessionManager.getCwd();
+				// Reload project-layer settings for the destination cwd before resolving
+				// the persona — otherwise task.disabledAgents and task.agentModelOverrides
+				// are still scoped to the previous project. reloadForCwd is a no-op when
+				// the cwd is unchanged (same-project resume). applyCwdChange() called later
+				// by the TUI layer is guarded the same way and will skip the second reload.
+				await this.settings.reloadForCwd(cwd);
 				const def = await this.#resolvePersona(name, cwd);
 				const { modelFailed } = await this.applyAgentPersona(def, {
 					recordModelChange: false,
