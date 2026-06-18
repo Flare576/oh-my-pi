@@ -2662,9 +2662,19 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				? (discoveredAgentsForPersona.find(a => a.name === options.initialAgentName) ?? null)
 				: null;
 			if (options.initialAgentName && !namedAgent) {
-				logger.warn(`--agent: no agent named "${options.initialAgentName}" found; falling back to first primary`);
+				logger.warn(
+					`--agent: no agent named "${options.initialAgentName}" found; falling back to session or first primary`,
+				);
 			}
-			const startAgent = namedAgent ?? primaryAgents[0] ?? null;
+			// When no explicit --agent flag, infer from the last stamped entry so resuming
+			// a session restores the agent that was active when the session was saved.
+			const sessionAgent =
+				namedAgent === null
+					? (discoveredAgentsForPersona.find(
+							a => a.name.toLowerCase() === (session.sessionManager.getLastAgentName() ?? "").toLowerCase(),
+						) ?? null)
+					: null;
+			const startAgent = namedAgent ?? sessionAgent ?? primaryAgents[0] ?? null;
 			if (startAgent) await session.applyAgentPersona(startAgent);
 		}
 		if (asyncJobManager) {

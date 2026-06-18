@@ -326,6 +326,7 @@
 ### Added
 
 - `agent` field on `SessionMessageEntry`: when an agent definition is active, its name is recorded on all persisted message entries — LLM responses, bash/python results, and todo-command developer messages (mirrors the `agent` field on OpenCode message rows). Field is optional; vanilla Pi sessions and OMP sessions without an active agent definition are unchanged.
+- Agent definition auto-restored on session resume: `/resume` and `--resume` now infer the active agent from the last stamped message entry in the loaded session, so picking up a previous conversation keeps the same agent context. Falls back to the first primary agent (startup default) when no agent stamps are present or when the stamped agent definition no longer exists on disk. An explicit `--agent` flag always takes precedence.
 
 ## [15.13.3] - 2026-06-15
 

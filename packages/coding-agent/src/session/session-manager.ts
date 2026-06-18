@@ -1318,6 +1318,20 @@ export class SessionManager {
 		return undefined;
 	}
 
+	/** Returns the name of the agent that last produced a stamped message entry in
+	 * this session's branch, or `undefined` when no entry carries an agent name.
+	 * Used at session-resume time to restore the active agent definition. */
+	getLastAgentName(): string | undefined {
+		const branch = this.getBranch();
+		for (let index = branch.length - 1; index >= 0; index--) {
+			const entry = branch[index];
+			if (entry.type === "message" && typeof (entry as SessionMessageEntry).agent === "string") {
+				return (entry as SessionMessageEntry).agent;
+			}
+		}
+		return undefined;
+	}
+
 	getEntry(id: string): SessionEntry | undefined {
 		return this.#index.get(id);
 	}

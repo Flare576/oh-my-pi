@@ -37,6 +37,7 @@ import {
 	type ResetUsageAccount,
 	toResetUsageAccounts,
 } from "../../slash-commands/helpers/reset-usage";
+import { discoverAgents } from "../../task";
 import { AUTO_THINKING, type ConfiguredThinkingLevel } from "../../thinking";
 import {
 	isImageProviderPreference,
@@ -904,8 +905,19 @@ export class SelectorController {
 			// cwd-derived cache at it before rendering.
 			await this.ctx.applyCwdChange(newCwd);
 		}
-		this.#refreshSessionTerminalTitle();
-		this.ctx.updateEditorBorderColor();
+
+		// Restore the agent that was active when the session was saved. Falls back
+		// to the first primary when the session carries no agent stamps or when the
+		// stamped agent definition no longer exists on disk.
+		const { agents } = await discoverAgents(newCwd);
+		const lastAgentName = this.ctx.sessionManager.getLastAgentName();
+		const primaryAgents = agents
+			.filter(a => a.mode === "primary")
+			.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
+		const agentDef = lastAgentName
+			? (agents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
+			: (primaryAgents[0] ?? null);
+		await this.ctx.session.applyAgentPersona(agentDef);
 
 		// Clear and re-render the chat
 		this.ctx.chatContainer.clear();
