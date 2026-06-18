@@ -1077,6 +1077,8 @@ export class AgentSession {
 	#lastAppendOnlyResolution?: { enable: boolean; providerId: string | undefined };
 	#eventListeners: AgentSessionEventListener[] = [];
 	#commandMetadataChangedListeners: CommandMetadataChangedListener[] = [];
+	/** Notices emitted before the first subscriber is registered; drained on first subscribe(). */
+	#startupNoticeQueue: Array<Extract<AgentSessionEvent, { type: "notice" }>> = [];
 
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	#pendingNextTurnMessages: CustomMessage[] = [];
@@ -2224,7 +2226,14 @@ export class AgentSession {
 	 * react to (e.g. background queue flush failures).
 	 */
 	emitNotice(level: "info" | "warning" | "error", message: string, source?: string): void {
-		this.#emit({ type: "notice", level, message, source });
+		const event = { type: "notice" as const, level, message, source };
+		if (this.#eventListeners.length === 0) {
+			// No subscriber yet (e.g. startup persona apply before interactive mode
+			// constructs its EventController). Queue and drain on first subscribe().
+			this.#startupNoticeQueue.push(event);
+		} else {
+			this.#emit(event);
+		}
 	}
 
 	#queuedExtensionEvents: Promise<void> = Promise.resolve();
@@ -3837,8 +3846,16 @@ export class AgentSession {
 	 * Multiple listeners can be added. Returns unsubscribe function for this listener.
 	 */
 	subscribe(listener: AgentSessionEventListener): () => void {
+		const wasEmpty = this.#eventListeners.length === 0;
 		this.#eventListeners.push(listener);
-
+		// Drain any notices that were emitted before the first subscriber (e.g.
+		// startup persona model failure before interactive mode subscribes).
+		if (wasEmpty && this.#startupNoticeQueue.length > 0) {
+			const queued = this.#startupNoticeQueue.splice(0);
+			for (const event of queued) {
+				this.#emit(event);
+			}
+		}
 		// Return unsubscribe function for this specific listener
 		return () => {
 			const index = this.#eventListeners.indexOf(listener);
@@ -4039,6 +4056,7 @@ export class AgentSession {
 			this.#unsubscribeAppendOnly = undefined;
 		}
 		this.#eventListeners = [];
+		this.#startupNoticeQueue = [];
 	}
 
 	#closeAllProviderSessions(reason: string): void {
