@@ -138,7 +138,6 @@ import type { Rule } from "../capability/rule";
 import { shouldEnableAppendOnlyContext } from "../config/append-only-context-mode";
 import type { ModelRegistry } from "../config/model-registry";
 import {
-	extractExplicitThinkingSelector,
 	filterAvailableModelsByEnabledPatterns,
 	formatModelSelectorValue,
 	formatModelString,
@@ -6676,7 +6675,7 @@ export class AgentSession {
 	async setModel(
 		model: Model,
 		role: string = "default",
-		options?: { selector?: string; thinkingLevel?: ThinkingLevel; persist?: boolean },
+		options?: { selector?: string; thinkingLevel?: ThinkingLevel; persist?: boolean; record?: boolean },
 	): Promise<void> {
 		const previousEditMode = this.#resolveActiveEditMode();
 		if (!this.#modelRegistry.hasConfiguredAuth(model)) {
@@ -6685,14 +6684,10 @@ export class AgentSession {
 
 		this.#clearActiveRetryFallback();
 		this.#setModelWithProviderSessionReset(model);
-		this.sessionManager.appendModelChange(`${model.provider}/${model.id}`, role);
-		if (options?.persist) {
-			this.settings.setModelRole(
-				role,
-				this.#formatRoleModelValue(role, model, options.selector, options.thinkingLevel),
-			);
+		if (options?.record !== false) {
+			this.sessionManager.appendModelChange(`${model.provider}/${model.id}`, role);
+			this.settings.getStorage()?.recordModelUsage(`${model.provider}/${model.id}`);
 		}
-		this.settings.getStorage()?.recordModelUsage(`${model.provider}/${model.id}`);
 
 		// Re-apply thinking for the newly selected model. Prefer the model's
 		// configured defaultLevel; otherwise preserve the current level (or auto).
@@ -6805,8 +6800,8 @@ export class AgentSession {
 	 * Apply a resolved role model as the active model without changing global
 	 * settings. Shared with role cycling and the plan-approval model slider.
 	 */
-	async applyRoleModel(entry: ResolvedRoleModel): Promise<void> {
-		await this.setModel(entry.model, entry.role);
+	async applyRoleModel(entry: ResolvedRoleModel, options?: { record?: boolean }): Promise<void> {
+		await this.setModel(entry.model, entry.role, { record: options?.record });
 		if (entry.explicitThinkingLevel && entry.thinkingLevel !== undefined) {
 			this.setThinkingLevel(entry.thinkingLevel);
 		}
@@ -6817,7 +6812,10 @@ export class AgentSession {
 	 * Replaces the last prompt block with the persona's systemPrompt,
 	 * preserving global blocks. Also applies the persona's model if configured.
 	 */
-	async applyAgentPersona(def: AgentDefinition | null): Promise<{ modelFailed?: string }> {
+	async applyAgentPersona(
+		def: AgentDefinition | null,
+		options?: { recordModelChange?: boolean },
+	): Promise<{ modelFailed?: string }> {
 		logger.debug("applyAgentPersona called", { name: def?.name ?? null });
 		// Apply the model before mutating visible persona state. Failure is returned
 		// as { modelFailed } so callers that show UI can surface a visible warning;
@@ -6835,12 +6833,15 @@ export class AgentSession {
 				});
 				if (resolved.model) {
 					try {
-						await this.applyRoleModel({
-							role: "persona",
-							model: resolved.model,
-							thinkingLevel: resolved.thinkingLevel,
-							explicitThinkingLevel: resolved.explicitThinkingLevel,
-						});
+						await this.applyRoleModel(
+							{
+								role: "persona",
+								model: resolved.model,
+								thinkingLevel: resolved.thinkingLevel,
+								explicitThinkingLevel: resolved.explicitThinkingLevel,
+							},
+							{ record: options?.recordModelChange ?? true },
+						);
 					} catch (err) {
 						modelFailed = String(err);
 						logger.warn("applyAgentPersona: model swap failed, keeping current model", {
@@ -8815,23 +8816,6 @@ export class AgentSession {
 
 	#getModelKey(model: Model): string {
 		return `${model.provider}/${model.id}`;
-	}
-
-	#formatRoleModelValue(
-		role: string,
-		model: Model,
-		selectorOverride?: string,
-		thinkingLevelOverride?: ThinkingLevel,
-	): string {
-		const modelKey = selectorOverride ?? `${model.provider}/${model.id}`;
-		if (thinkingLevelOverride !== undefined) {
-			return formatModelSelectorValue(modelKey, thinkingLevelOverride);
-		}
-		const existingRoleValue = this.settings.getModelRole(role);
-		if (!existingRoleValue) return modelKey;
-
-		const thinkingLevel = extractExplicitThinkingSelector(existingRoleValue, this.settings);
-		return formatModelSelectorValue(modelKey, thinkingLevel);
 	}
 	#resolveContextPromotionConfiguredTarget(currentModel: Model, availableModels: Model[]): Model | undefined {
 		const configuredTarget = currentModel.contextPromotionTarget?.trim();

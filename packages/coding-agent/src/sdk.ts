@@ -2679,7 +2679,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 						) ?? null)
 					: null;
 			const startAgent = namedAgent ?? sessionAgent ?? primaryAgents[0] ?? null;
-			if (startAgent) await session.applyAgentPersona(startAgent);
+			// recordModelChange: false — startup restore should not write a model_change
+			// session entry; reopening the same session would otherwise accumulate stale
+			// entries before the user sends anything.
+			if (startAgent) await session.applyAgentPersona(startAgent, { recordModelChange: false });
 		}
 		if (asyncJobManager) {
 			session.yieldQueue.register<AsyncResultEntry>("async-result", {

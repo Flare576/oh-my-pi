@@ -1480,6 +1480,12 @@ export class InputController {
 			this.ctx.showStatus("Persona cycling is paused while the session is streaming");
 			return;
 		}
+		// Block cycling while a subagent is focused: persona applies to the main session,
+		// not the focused view. Matches the guard in cycleThinkingLevel.
+		if (this.ctx.focusedAgentId) {
+			this.ctx.showStatus("Persona cycling applies to the main session — press ←← to return first");
+			return;
+		}
 		this.#personaCycleInFlight = true;
 		try {
 			logger.debug("cyclePersona called", { dir });

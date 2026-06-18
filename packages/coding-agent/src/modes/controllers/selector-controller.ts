@@ -917,7 +917,7 @@ export class SelectorController {
 		const agentDef = lastAgentName
 			? (primaryAgents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
 			: (primaryAgents[0] ?? null);
-		await this.ctx.session.applyAgentPersona(agentDef);
+		await this.ctx.session.applyAgentPersona(agentDef, { recordModelChange: false });
 		// Refresh terminal title to reflect the resumed session name / cwd.
 		this.#refreshSessionTerminalTitle();
 

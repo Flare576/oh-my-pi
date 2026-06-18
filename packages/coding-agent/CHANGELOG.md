@@ -8,13 +8,14 @@
 
 ### Added
 
-- **Agent persona cycling**: Add `mode: "primary"` to an agent definition's YAML frontmatter to include it in the Tab cycle. `Tab` cycles forward, `Shift+Tab` cycles backward through primary agents in the main chat editor. Tab cycling only fires when the editor is empty — any typed text (slash command, file path, partial word) falls through to context-aware tab-completion as before.
-- **`--agent <name>` flag**: Selects the initial persona at startup. When primary agents are discovered and no flag is given, the first by `order` (or alphabetically) is loaded automatically.
+- **Agent persona cycling**: Add `mode: "primary"` to an agent definition's YAML frontmatter to include it in the Tab cycle. `Tab` cycles forward, `Shift+Tab` cycles backward through primary agents in the main chat editor. Tab cycling only fires when the editor is empty — any typed text (slash command, file path, partial word) falls through to context-aware tab-completion as before. Persona cycling is blocked while the session is streaming or a subagent view is focused.
+- **`--agent <name>` flag**: Selects the initial persona at startup. When primary agents are discovered and no flag is given, the first by `order` (or alphabetically) is loaded automatically. The flag is restricted to primary agents; non-primary/subagent definitions are rejected with a warning and fall back to first primary.
+- **`model` field on `AgentDefinition`**: One or more `<provider>/<id>` strings; the first resolvable model is applied when the persona is loaded via Tab or `--agent`. Startup and `/resume` restore do not write a new `model_change` session entry. If the configured model is unavailable, the persona prompt still applies and a visible warning is shown.
 - **`order` field on `AgentDefinition`**: Controls Tab-cycle position; lower values appear earlier. Agents without `order` sort alphabetically after those with `order`.
 - **`agent_persona` status-line segment**: Displays the active persona name between `model` and `mode` in the default status-line preset; hidden when no persona is active.
-- **`activePersonaName` on `ExtensionContext`**: Extensions can read the currently active persona name.
-- **`agent` field on `SessionMessageEntry`**: Active persona name stamped on all persisted entries — LLM responses, bash/python results, and todo-command messages. Optional; sessions without an active agent are unchanged.
-- **Session-resume persona restoration**: `/resume` and `--resume` infer the active agent from the last stamped message entry in the loaded session; falls back to the first primary agent when stamps are absent or the agent no longer exists on disk. An explicit `--agent` flag always takes precedence.
+- **`activePersonaName` on `ExtensionContext`**: Live getter — always reflects the current active persona, not a snapshot taken at context creation time.
+- **`agent` field on `SessionMessageEntry`**: Active persona name stamped on all persisted entries — LLM responses, bash/python results, todo-command messages, and todo reminder injections. Optional; sessions without an active agent are unchanged.
+- **Session-resume persona restoration**: `/resume` and `--resume` infer the active agent from the last stamped message entry in the loaded session; falls back to the first primary agent when stamps are absent, the agent no longer exists on disk, or the stamp refers to a non-primary agent. An explicit `--agent` flag always takes precedence.
 
 ### Changed
 
