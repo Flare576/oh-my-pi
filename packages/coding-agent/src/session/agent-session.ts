@@ -2449,7 +2449,7 @@ export class AgentSession {
 				event.message.role === "fileMention"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-			if (event.message.role === "assistant") {
+				if (event.message.role === "assistant") {
 					const assistantMsg = event.message as AssistantMessage;
 					if (assistantMsg.stopReason !== "aborted" && assistantMsg.stopReason !== "error" && assistantMsg.usage) {
 						assistantMsg.contextSnapshot = {
@@ -6821,9 +6821,8 @@ export class AgentSession {
 		logger.debug("applyAgentPersona called", { name: def?.name ?? null });
 		this.#activePersona = def;
 		this.#personaBlock = def?.systemPrompt ?? null;
-		this.#baseSystemPrompt = this.#personaBlock !== null
-			? [...this.#globalBlocks, this.#personaBlock]
-			: [...this.#globalBlocks];
+		this.#baseSystemPrompt =
+			this.#personaBlock !== null ? [...this.#globalBlocks, this.#personaBlock] : [...this.#globalBlocks];
 		this.agent.setSystemPrompt(this.#baseSystemPrompt);
 		if (def?.model?.length) {
 			const availableModels = this.#modelRegistry.getAvailable();

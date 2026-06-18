@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `Shift+Tab` in the main chat editor now cycles backward through agent personas instead of cycling thinking levels; thinking-level cycling moves to `Ctrl+Tab`. To restore the prior binding, set `app.thinking.cycle` to `["shift+tab"]` in your keybindings config.
+
+### Added
+
+- **Agent persona cycling**: Add `mode: "primary"` to an agent definition's YAML frontmatter to include it in the Tab cycle. `Tab` cycles forward, `Shift+Tab` cycles backward through primary agents in the main chat editor. Autocomplete takes first priority — cycling fires only when no completions are active.
+- **`--agent <name>` flag**: Selects the initial persona at startup. When primary agents are discovered and no flag is given, the first by `order` (or alphabetically) is loaded automatically.
+- **`order` field on `AgentDefinition`**: Controls Tab-cycle position; lower values appear earlier. Agents without `order` sort alphabetically after those with `order`.
+- **`agent_persona` status-line segment**: Displays the active persona name between `model` and `mode` in the default status-line preset; hidden when no persona is active.
+- **`activePersonaName` on `ExtensionContext`**: Extensions can read the currently active persona name.
+- **`agent` field on `SessionMessageEntry`**: Active persona name stamped on all persisted entries — LLM responses, bash/python results, and todo-command messages. Optional; sessions without an active agent are unchanged.
+- **Session-resume persona restoration**: `/resume` and `--resume` infer the active agent from the last stamped message entry in the loaded session; falls back to the first primary agent when stamps are absent or the agent no longer exists on disk. An explicit `--agent` flag always takes precedence.
+
+### Changed
+
+- Thinking-level cycling moved from `Shift+Tab` to `Ctrl+Tab`.
+
 ## [16.0.6] - 2026-06-18
 
 ### Added
@@ -322,11 +340,6 @@
 - Fixed `startup.quiet` leaving MCP and LSP startup status events visible during launch ([#2639](https://github.com/can1357/oh-my-pi/issues/2639)).
 - Registered the `Advisor` group in the `model` settings tab so advisor settings render correctly in the settings panel.
 - Fixed Windows bash path handling so MSYS/Git-Bash drive aliases like `/d/project` and WSL-style `/mnt/d/project` normalize to native drive paths consistently across the bash tool cwd validation and brush filesystem builtins ([#2634](https://github.com/can1357/oh-my-pi/issues/2634)).
-
-### Added
-
-- `agent` field on `SessionMessageEntry`: when an agent definition is active, its name is recorded on all persisted message entries — LLM responses, bash/python results, and todo-command developer messages (mirrors the `agent` field on OpenCode message rows). Field is optional; vanilla Pi sessions and OMP sessions without an active agent definition are unchanged.
-- Agent definition auto-restored on session resume: `/resume` and `--resume` now infer the active agent from the last stamped message entry in the loaded session, so picking up a previous conversation keeps the same agent context. Falls back to the first primary agent (startup default) when no agent stamps are present or when the stamped agent definition no longer exists on disk. An explicit `--agent` flag always takes precedence.
 
 ## [15.13.3] - 2026-06-15
 

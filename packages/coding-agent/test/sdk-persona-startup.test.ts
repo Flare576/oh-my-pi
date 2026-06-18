@@ -19,11 +19,7 @@ import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manage
 import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
 import type { AgentDefinition } from "@oh-my-pi/pi-coding-agent/task/types";
 
-function makeAgent(
-	name: string,
-	mode: "primary" | "subagent" = "primary",
-	order?: number,
-): AgentDefinition {
+function makeAgent(name: string, mode: "primary" | "subagent" = "primary", order?: number): AgentDefinition {
 	return {
 		name,
 		description: `${name} agent`,
@@ -60,11 +56,7 @@ describe("createAgentSession — startup persona loading", () => {
 		}
 	});
 
-	async function create(
-		sessionManager: SessionManager,
-		agents: AgentDefinition[],
-		initialAgentName?: string,
-	) {
+	async function create(sessionManager: SessionManager, agents: AgentDefinition[], initialAgentName?: string) {
 		vi.spyOn(discovery, "discoverAgents").mockResolvedValue({
 			agents,
 			projectAgentsDir: null,
@@ -114,10 +106,7 @@ describe("createAgentSession — startup persona loading", () => {
 		const sm = SessionManager.inMemory();
 		sm.appendMessage(userMsg(), "beta");
 
-		const session = await create(sm, [
-			makeAgent("alpha", "primary", 1),
-			makeAgent("beta", "primary", 2),
-		]);
+		const session = await create(sm, [makeAgent("alpha", "primary", 1), makeAgent("beta", "primary", 2)]);
 		expect(session.activePersonaName).toBe("beta");
 	});
 
@@ -136,10 +125,7 @@ describe("createAgentSession — startup persona loading", () => {
 		sm.appendMessage(userMsg(), "deleted-agent");
 
 		// "deleted-agent" is not in the discovered list anymore
-		const session = await create(sm, [
-			makeAgent("alpha", "primary", 1),
-			makeAgent("beta", "primary", 2),
-		]);
+		const session = await create(sm, [makeAgent("alpha", "primary", 1), makeAgent("beta", "primary", 2)]);
 		expect(session.activePersonaName).toBe("alpha");
 	});
 

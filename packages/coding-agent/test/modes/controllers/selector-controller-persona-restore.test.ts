@@ -19,11 +19,7 @@ beforeAll(() => {
 	initTheme();
 });
 
-function makeAgent(
-	name: string,
-	mode: "primary" | "subagent" = "primary",
-	order?: number,
-): AgentDefinition {
+function makeAgent(name: string, mode: "primary" | "subagent" = "primary", order?: number): AgentDefinition {
 	return {
 		name,
 		description: `${name} agent`,
@@ -87,9 +83,7 @@ describe("SelectorController.handleResumeSession — persona restore", () => {
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
 		expect(applyAgentPersona).toHaveBeenCalledTimes(1);
-		expect(applyAgentPersona).toHaveBeenCalledWith(
-			expect.objectContaining({ name: "beta" }),
-		);
+		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "beta" }));
 	});
 
 	it("stamp lookup is case-insensitive", async () => {
@@ -103,9 +97,7 @@ describe("SelectorController.handleResumeSession — persona restore", () => {
 		const controller = new SelectorController(ctx);
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(
-			expect.objectContaining({ name: "beta" }),
-		);
+		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "beta" }));
 	});
 
 	it("falls back to first primary when stamp does not match any known agent", async () => {
@@ -119,9 +111,7 @@ describe("SelectorController.handleResumeSession — persona restore", () => {
 		const controller = new SelectorController(ctx);
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(
-			expect.objectContaining({ name: "alpha" }),
-		);
+		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }));
 	});
 
 	it("loads first primary when session has no stamp at all", async () => {
@@ -135,9 +125,7 @@ describe("SelectorController.handleResumeSession — persona restore", () => {
 		const controller = new SelectorController(ctx);
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(
-			expect.objectContaining({ name: "alpha" }),
-		);
+		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }));
 	});
 
 	it("calls applyAgentPersona(null) when no primary agents exist", async () => {
