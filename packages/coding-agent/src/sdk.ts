@@ -2646,6 +2646,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			providerSessionId: options.providerSessionId,
 			parentEvalSessionId: options.parentEvalSessionId,
 			advisorReadOnlyTools,
+			// Persona restoration on every session switch (resume, ACP, RPC, collab).
+			// sdk.ts is the only place that has access to discoverAgents + settings,
+			// so the callback lives here and is called internally by switchSession().
+			resolvePersona: async (name, cwd) => {
+				const { agents } = await discoverAgents(cwd);
+				const disabled = settings.get("task.disabledAgents") as string[];
+				const primary = agents
+					.filter(a => a.mode === "primary" && !disabled.includes(a.name))
+					.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
+				if (!primary.length) return null;
+				return name
+					? (primary.find(a => a.name.toLowerCase() === name.toLowerCase()) ?? primary[0])
+					: primary[0];
+			},
 		});
 		hasSession = true;
 		// Auto-load initial persona for top-level sessions

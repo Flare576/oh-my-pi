@@ -37,7 +37,6 @@ import {
 	type ResetUsageAccount,
 	toResetUsageAccounts,
 } from "../../slash-commands/helpers/reset-usage";
-import { discoverAgents } from "../../task";
 import { AUTO_THINKING, type ConfiguredThinkingLevel } from "../../thinking";
 import {
 	isImageProviderPreference,
@@ -68,7 +67,6 @@ import { TranscriptBlock } from "../components/transcript-container";
 import { TreeSelectorComponent } from "../components/tree-selector";
 import { UserMessageSelectorComponent } from "../components/user-message-selector";
 import type { SessionObserverRegistry } from "../session-observer-registry";
-import { sanitizeStatusText } from "../shared";
 import { buildCopyTargets } from "../utils/copy-targets";
 
 const MANUAL_LOGIN_TIP = "Tip: You can complete pairing with /login <redirect URL>.";
@@ -896,39 +894,20 @@ export class SelectorController {
 		this.ctx.clearTransientSessionUi();
 
 		const previousCwd = this.ctx.sessionManager.getCwd();
-		// Switch session via AgentSession (emits hook and tool session events). The
-		// SessionManager adopts the resumed session's own cwd when it differs.
+		// switchSession() restores the active persona via the resolvePersona callback
+		// configured in sdk.ts — no additional persona discovery needed here.
 		await this.ctx.session.switchSession(sessionPath);
 		const newCwd = this.ctx.sessionManager.getCwd();
 		const movedProject = normalizePathForComparison(newCwd) !== normalizePathForComparison(previousCwd);
 		if (movedProject) {
-			// Resumed a session from another project: re-point the process and every
-			// cwd-derived cache at it before rendering.
 			await this.ctx.applyCwdChange(newCwd);
 		}
 
-		// Restore the agent that was active when the session was saved. Falls back
-		// to the first primary when the session carries no agent stamps or when the
-		// stamped agent definition no longer exists on disk.
-		const { agents } = await discoverAgents(newCwd);
-		const lastAgentName = this.ctx.sessionManager.getLastAgentName();
-		const disabledAgents = this.ctx.session.settings.get("task.disabledAgents") as string[];
-		const primaryAgents = agents
-			.filter(a => a.mode === "primary" && !disabledAgents.includes(a.name))
-			.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
-		const agentDef = lastAgentName
-			? (primaryAgents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
-			: (primaryAgents[0] ?? null);
-		const { modelFailed } = await this.ctx.session.applyAgentPersona(agentDef, { recordModelChange: false, applyModel: false });
-		const personaWarning = modelFailed && agentDef ? ` (persona "${sanitizeStatusText(agentDef.name)}" model unavailable)` : "";
-		// Refresh terminal title to reflect the resumed session name / cwd.
 		this.#refreshSessionTerminalTitle();
-
-		// Clear and re-render the chat
 		this.ctx.chatContainer.clear();
 		this.ctx.renderInitialMessages({ clearTerminalHistory: true });
 		await this.ctx.reloadTodos();
-		this.ctx.showStatus((movedProject ? `Resumed session in ${shortenPath(newCwd)}` : "Resumed session") + personaWarning);
+		this.ctx.showStatus(movedProject ? `Resumed session in ${shortenPath(newCwd)}` : "Resumed session");
 	}
 
 	async handleSessionDeleteCommand(): Promise<void> {

@@ -513,6 +513,14 @@ export interface AgentSessionConfig {
 	advisorReadOnlyTools?: AgentTool[];
 	/** Preloaded watchdog prompt content for the advisor. */
 	advisorWatchdogPrompt?: string;
+	/**
+	 * Optional resolver called by switchSession() after loading a session to restore the
+	 * active persona. Receives the last persisted persona name (from getLastAgentName())
+	 * and the session's cwd; must return the AgentDefinition to apply (or null for none).
+	 * When absent, switchSession() leaves the active persona unchanged — callers must
+	 * handle restoration themselves or accept the stale persona.
+	 */
+	resolvePersona?: (name: string | undefined, cwd: string) => Promise<AgentDefinition | null>;
 }
 
 /** Options for AgentSession.prompt() */
@@ -1191,6 +1199,7 @@ export class AgentSession {
 	#toolRegistry: Map<string, AgentTool>;
 	#transformContext: (messages: AgentMessage[], signal?: AbortSignal) => AgentMessage[] | Promise<AgentMessage[]>;
 	#onPayload: SimpleStreamOptions["onPayload"] | undefined;
+	#resolvePersona: ((name: string | undefined, cwd: string) => Promise<AgentDefinition | null>) | undefined;
 	#onResponse: SimpleStreamOptions["onResponse"] | undefined;
 	#onSseEvent: SimpleStreamOptions["onSseEvent"] | undefined;
 	#convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
@@ -1568,6 +1577,7 @@ export class AgentSession {
 		this.#rebuildSystemPrompt = config.rebuildSystemPrompt;
 		this.#getMcpServerInstructions = config.getMcpServerInstructions;
 		this.#reloadSshTool = config.reloadSshTool;
+		this.#resolvePersona = config.resolvePersona;
 		this.#baseSystemPrompt = this.agent.state.systemPrompt;
 		this.#globalBlocks = [...this.agent.state.systemPrompt];
 		this.#personaBlock = null;
@@ -11242,6 +11252,26 @@ export class AgentSession {
 				this.#resetHindsightConversationTrackingIfHindsight();
 				this.#resetMnemopiConversationTrackingIfMnemopi();
 			}
+			// Restore the active persona from the loaded session's history.
+			// Runs after model/thinking/serviceTier restoration so the persona
+			// prompt is applied last (same order as a fresh startup).
+			// Only fires when the session provides a resolvePersona callback;
+			// non-TUI callers (RPC, ACP, collab) benefit automatically once
+			// sdk.ts wires the callback into AgentSessionConfig.
+			if (this.#resolvePersona) {
+				const name = this.sessionManager.getLastAgentName();
+				const cwd = this.sessionManager.getCwd();
+				const def = await this.#resolvePersona(name, cwd);
+				const { modelFailed } = await this.applyAgentPersona(def, {
+					recordModelChange: false,
+					applyModel: false,
+				});
+				if (modelFailed && def) {
+					const safeName = def.name.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/ +/g, " ").trim();
+					this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
+				}
+			}
+
 			this.#reconnectToAgent();
 			try {
 				await this.#sessionSwitchReconciler?.();
