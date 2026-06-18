@@ -1489,9 +1489,6 @@ export class InputController {
 			const nextIdx = (((baseIdx + dir) % primary.length) + primary.length) % primary.length;
 			logger.debug("cyclePersona switching", { from: currentName, to: primary[nextIdx].name });
 			await this.ctx.session.applyAgentPersona(primary[nextIdx]);
-			this.ctx.statusLine.invalidate();
-			this.ctx.updateEditorTopBorder();
-			this.ctx.ui.requestRender();
 			this.ctx.showStatus(`Persona: ${primary[nextIdx].name}`);
 		} finally {
 			this.#personaCycleInFlight = false;

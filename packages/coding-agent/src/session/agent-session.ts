@@ -4549,7 +4549,7 @@ export class AgentSession {
 	}
 
 	#reapplyPersonaBlock(): void {
-		if (!this.#personaBlock) return;
+		if (this.#personaBlock === null) return;
 		if (this.#baseSystemPrompt[this.#baseSystemPrompt.length - 1] !== this.#personaBlock) {
 			this.#baseSystemPrompt = [...this.#baseSystemPrompt, this.#personaBlock];
 			this.agent.setSystemPrompt(this.#baseSystemPrompt);
@@ -6821,7 +6821,7 @@ export class AgentSession {
 		logger.debug("applyAgentPersona called", { name: def?.name ?? null });
 		this.#activePersona = def;
 		this.#personaBlock = def?.systemPrompt ?? null;
-		this.#baseSystemPrompt = this.#personaBlock
+		this.#baseSystemPrompt = this.#personaBlock !== null
 			? [...this.#globalBlocks, this.#personaBlock]
 			: [...this.#globalBlocks];
 		this.agent.setSystemPrompt(this.#baseSystemPrompt);
@@ -6849,12 +6849,7 @@ export class AgentSession {
 	}
 
 	#emitPersonaChangedEvent(def: AgentDefinition | null): void {
-		void this.sendCustomMessage<{ name: string | null }>({
-			customType: "persona_applied",
-			content: def?.name ?? "",
-			details: { name: def?.name ?? null },
-			display: false,
-		});
+		this.#emit({ type: "persona_changed", persona: def });
 	}
 
 	/**
@@ -11324,12 +11319,11 @@ export class AgentSession {
 		this.#cancelOwnAsyncJobs();
 
 		this.sessionManager.createBranchedSession(leafId);
-		this.sessionManager.appendMessage({
-			role: "user",
-			content: [{ type: "text", text: question }],
-			timestamp: Date.now(),
-		});
-		this.sessionManager.appendMessage(assistantMessage);
+		this.sessionManager.appendMessage(
+			{ role: "user", content: [{ type: "text", text: question }], timestamp: Date.now() },
+			this.activePersonaName ?? undefined,
+		);
+		this.sessionManager.appendMessage(assistantMessage, this.activePersonaName ?? undefined);
 		this.#syncTodoPhasesFromBranch();
 		this.#freshProviderSessionId = undefined;
 		this.#syncAgentSessionId();
