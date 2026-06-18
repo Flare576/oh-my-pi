@@ -78,6 +78,9 @@ export default class Index extends Command {
 			char: "r",
 			description: "Resume a session (by ID prefix, path, or picker if omitted)",
 		}),
+		agent: Flags.string({
+			description: "Load a named agent persona at startup (must have mode: primary in its frontmatter)",
+		}),
 		"session-dir": Flags.string({
 			description: "Directory for session storage and lookup",
 		}),

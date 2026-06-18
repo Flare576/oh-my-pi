@@ -918,6 +918,8 @@ export class SelectorController {
 			? (agents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
 			: (primaryAgents[0] ?? null);
 		await this.ctx.session.applyAgentPersona(agentDef);
+		// Refresh terminal title to reflect the resumed session name / cwd.
+		this.#refreshSessionTerminalTitle();
 
 		// Clear and re-render the chat
 		this.ctx.chatContainer.clear();

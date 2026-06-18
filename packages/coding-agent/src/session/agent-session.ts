@@ -6819,11 +6819,10 @@ export class AgentSession {
 	 */
 	async applyAgentPersona(def: AgentDefinition | null): Promise<void> {
 		logger.debug("applyAgentPersona called", { name: def?.name ?? null });
-		this.#activePersona = def;
-		this.#personaBlock = def?.systemPrompt ?? null;
-		this.#baseSystemPrompt =
-			this.#personaBlock !== null ? [...this.#globalBlocks, this.#personaBlock] : [...this.#globalBlocks];
-		this.agent.setSystemPrompt(this.#baseSystemPrompt);
+		// Resolve and apply the model before mutating visible persona state so
+		// callers only observe a fully switched persona. applyRoleModel can fail
+		// (e.g. model not found) — in that case we still apply the prompt/persona
+		// change but skip the model swap rather than leaving the session half-switched.
 		if (def?.model?.length) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
@@ -6834,16 +6833,28 @@ export class AgentSession {
 					modelRegistry: this.#modelRegistry,
 				});
 				if (resolved.model) {
-					await this.applyRoleModel({
-						role: "persona",
-						model: resolved.model,
-						thinkingLevel: resolved.thinkingLevel,
-						explicitThinkingLevel: resolved.explicitThinkingLevel,
-					});
+					try {
+						await this.applyRoleModel({
+							role: "persona",
+							model: resolved.model,
+							thinkingLevel: resolved.thinkingLevel,
+							explicitThinkingLevel: resolved.explicitThinkingLevel,
+						});
+					} catch (err) {
+						logger.warn("applyAgentPersona: model swap failed, keeping current model", {
+							model: modelStr,
+							err: String(err),
+						});
+					}
 					break;
 				}
 			}
 		}
+		this.#activePersona = def;
+		this.#personaBlock = def?.systemPrompt ?? null;
+		this.#baseSystemPrompt =
+			this.#personaBlock !== null ? [...this.#globalBlocks, this.#personaBlock] : [...this.#globalBlocks];
+		this.agent.setSystemPrompt(this.#baseSystemPrompt);
 		this.#emitPersonaChangedEvent(def);
 	}
 

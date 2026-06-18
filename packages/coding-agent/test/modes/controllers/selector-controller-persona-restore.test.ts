@@ -8,7 +8,7 @@
  *   2. Call applyAgentPersona(null) when no primary agents exist in the project.
  *   3. Always prefer the stamped agent over the default first-primary.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, type Mock, vi } from "bun:test";
 import { SelectorController } from "@oh-my-pi/pi-coding-agent/modes/controllers/selector-controller";
 import { initTheme } from "@oh-my-pi/pi-coding-agent/modes/theme/theme";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
@@ -33,8 +33,8 @@ function makeAgent(name: string, mode: "primary" | "subagent" = "primary", order
 
 interface TestHandle {
 	ctx: InteractiveModeContext;
-	applyAgentPersona: ReturnType<typeof vi.fn>;
-	getLastAgentName: ReturnType<typeof vi.fn>;
+	applyAgentPersona: Mock<(def: AgentDefinition | null) => Promise<void>>;
+	getLastAgentName: Mock<() => string | undefined>;
 }
 
 function createHandle(lastAgentName: string | undefined = undefined): TestHandle {

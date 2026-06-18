@@ -280,14 +280,19 @@ export class InputController {
 			"app.persona.cycleForward",
 			this.ctx.keybindings.getKeys("app.persona.cycleForward"),
 		);
-		this.ctx.editor.onCyclePersonaForward = () => {
+		this.ctx.editor.onCyclePersonaForward = (): false | undefined => {
+			// Return false when no persona is active so the editor falls through to
+			// its built-in tab-completion path (file/slash completions) rather than
+			// silently consuming the Tab key.
+			if (!this.#personaCycleInFlight && !this.ctx.session.activePersonaName) return false;
 			this.cyclePersona(1).catch(err => logger.error("cyclePersona(1) failed", { err: String(err) }));
 		};
 		this.ctx.editor.setActionKeys(
 			"app.persona.cycleBackward",
 			this.ctx.keybindings.getKeys("app.persona.cycleBackward"),
 		);
-		this.ctx.editor.onCyclePersonaBackward = () => {
+		this.ctx.editor.onCyclePersonaBackward = (): false | undefined => {
+			if (!this.#personaCycleInFlight && !this.ctx.session.activePersonaName) return false;
 			this.cyclePersona(-1).catch(err => logger.error("cyclePersona(-1) failed", { err: String(err) }));
 		};
 		this.ctx.editor.setActionKeys("app.model.cycleForward", this.ctx.keybindings.getKeys("app.model.cycleForward"));

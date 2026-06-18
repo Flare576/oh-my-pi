@@ -255,8 +255,8 @@ export class CustomEditor extends Editor {
 	onExit?: () => void;
 	onDisplayReset?: () => void;
 	onCycleThinkingLevel?: () => void;
-	onCyclePersonaForward?: () => void;
-	onCyclePersonaBackward?: () => void;
+	onCyclePersonaForward?: () => false | undefined;
+	onCyclePersonaBackward?: () => false | undefined;
 	onCycleModelForward?: () => void;
 	onCycleModelBackward?: () => void;
 	onSelectModel?: () => void;
@@ -561,10 +561,10 @@ export class CustomEditor extends Editor {
 			}
 
 			// Intercept configured persona cycle forward/backward.
-			// Two guards: the popup must not be open (autocomplete owns Tab when visible),
-			// and the editor must be empty — if the user has typed anything (a slash
-			// command, a file path, a word), Tab should fall through to context-aware
-			// tab-completion in the base class, not cycle the persona.
+			// Three guards: (1) popup not open — autocomplete owns Tab when visible;
+			// (2) editor is empty — any typed text falls through to context-aware
+			// tab-completion in the base class; (3) the handler itself can return
+			// `false` to signal "no personas available — fall through".
 			const editorEmpty = this.getText() === "";
 			if (
 				this.#matchesAction(canonical, "app.persona.cycleForward") &&
@@ -572,8 +572,7 @@ export class CustomEditor extends Editor {
 				!this.isShowingAutocomplete() &&
 				editorEmpty
 			) {
-				this.onCyclePersonaForward();
-				return;
+				if (this.onCyclePersonaForward() !== false) return;
 			}
 			if (
 				this.#matchesAction(canonical, "app.persona.cycleBackward") &&
@@ -581,8 +580,7 @@ export class CustomEditor extends Editor {
 				!this.isShowingAutocomplete() &&
 				editorEmpty
 			) {
-				this.onCyclePersonaBackward();
-				return;
+				if (this.onCyclePersonaBackward() !== false) return;
 			}
 
 			// Intercept configured interrupt shortcut.
