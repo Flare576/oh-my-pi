@@ -579,8 +579,9 @@ const agentPersonaSegment: StatusLineSegment = {
 	render(ctx) {
 		const name = ctx.session.activePersonaName;
 		if (!name) return { content: "", visible: false };
+		const safeName = sanitizeStatusText(name);
 		const icon = (theme.icon as Record<string, string | undefined>).persona;
-		const content = icon ? withIcon(icon, name) : `(${name})`;
+		const content = icon ? withIcon(icon, safeName) : `(${safeName})`;
 		return { content: theme.fg("statusLineModel", content), visible: true };
 	},
 };

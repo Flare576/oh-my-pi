@@ -8,7 +8,7 @@
 
 ### Added
 
-- **Agent persona cycling**: Add `mode: "primary"` to an agent definition's YAML frontmatter to include it in the Tab cycle. `Tab` cycles forward, `Shift+Tab` cycles backward through primary agents in the main chat editor. Autocomplete takes first priority — cycling fires only when no completions are active.
+- **Agent persona cycling**: Add `mode: "primary"` to an agent definition's YAML frontmatter to include it in the Tab cycle. `Tab` cycles forward, `Shift+Tab` cycles backward through primary agents in the main chat editor. Tab cycling only fires when the editor is empty — any typed text (slash command, file path, partial word) falls through to context-aware tab-completion as before.
 - **`--agent <name>` flag**: Selects the initial persona at startup. When primary agents are discovered and no flag is given, the first by `order` (or alphabetically) is loaded automatically.
 - **`order` field on `AgentDefinition`**: Controls Tab-cycle position; lower values appear earlier. Agents without `order` sort alphabetically after those with `order`.
 - **`agent_persona` status-line segment**: Displays the active persona name between `model` and `mode` in the default status-line preset; hidden when no persona is active.

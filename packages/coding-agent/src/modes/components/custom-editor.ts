@@ -561,12 +561,16 @@ export class CustomEditor extends Editor {
 			}
 
 			// Intercept configured persona cycle forward/backward.
-			// When the autocomplete popup is visible, Tab's job is to advance the
-			// completion — give it first dibs, same pattern as ESC (#1655).
+			// Two guards: the popup must not be open (autocomplete owns Tab when visible),
+			// and the editor must be empty — if the user has typed anything (a slash
+			// command, a file path, a word), Tab should fall through to context-aware
+			// tab-completion in the base class, not cycle the persona.
+			const editorEmpty = this.getText() === "";
 			if (
 				this.#matchesAction(canonical, "app.persona.cycleForward") &&
 				this.onCyclePersonaForward &&
-				!this.isShowingAutocomplete()
+				!this.isShowingAutocomplete() &&
+				editorEmpty
 			) {
 				this.onCyclePersonaForward();
 				return;
@@ -574,7 +578,8 @@ export class CustomEditor extends Editor {
 			if (
 				this.#matchesAction(canonical, "app.persona.cycleBackward") &&
 				this.onCyclePersonaBackward &&
-				!this.isShowingAutocomplete()
+				!this.isShowingAutocomplete() &&
+				editorEmpty
 			) {
 				this.onCyclePersonaBackward();
 				return;
