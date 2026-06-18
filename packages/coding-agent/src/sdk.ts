@@ -2683,7 +2683,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// session entry; reopening the same session would otherwise accumulate stale
 			// entries before the user sends anything.
 			if (startAgent) {
-				const { modelFailed } = await session.applyAgentPersona(startAgent, { recordModelChange: false });
+				// Skip model application when the persona was inferred from a session
+				// stamp (sessionAgent): the session model is already restored from
+				// history, same as the /resume path. Only apply the model when the
+				// user explicitly passed --agent or this is a genuinely fresh session
+				// starting with the first primary (no stamp).
+				const applyModel = startAgent !== sessionAgent;
+				const { modelFailed } = await session.applyAgentPersona(startAgent, { recordModelChange: false, applyModel });
 				if (modelFailed) {
 					logger.warn(`--agent: persona "${startAgent.name}" model not available — using current model`, {
 						err: modelFailed,

@@ -15,6 +15,7 @@ import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
+import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
 import type { AgentDefinition } from "@oh-my-pi/pi-coding-agent/task/types";
@@ -165,5 +166,35 @@ describe("createAgentSession — startup persona loading", () => {
 		const newEntries = sm.getBranch().slice(stampCount);
 		expect(newEntries.filter(e => e.type === "model_change")).toHaveLength(0);
 		expect(newEntries.filter(e => e.type === "thinking_level_change")).toHaveLength(0);
+	});
+
+	it("stamp-restore startup passes applyModel: false, preserving the session's restored model", async () => {
+		const sm = SessionManager.inMemory();
+		// Stamp session as if a previous run applied "alpha"
+		sm.appendMessage(userMsg(), "alpha");
+
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"])]);
+
+		// The agent was inferred from a session stamp, so applyModel must be false —
+		// the session's restored model (from branch history) should not be clobbered
+		// by the persona's frontmatter model.
+		expect(spy).toHaveBeenCalledOnce();
+		expect(spy.mock.calls[0][1]).toMatchObject({ applyModel: false });
+	});
+
+	it("explicit --agent startup passes applyModel: true, applying the persona model", async () => {
+		const sm = SessionManager.inMemory();
+
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"])], "alpha");
+
+		// Explicit --agent: persona model should be applied (user chose this persona
+		// intentionally, including its configured model).
+		expect(spy).toHaveBeenCalledOnce();
+		const opts = spy.mock.calls[0][1] as { applyModel?: boolean } | undefined;
+		expect(opts?.applyModel).not.toBe(false);
 	});
 });
