@@ -504,6 +504,7 @@ export class ExtensionRunner {
 
 	createContext(): ExtensionContext {
 		const getModel = this.#getModel;
+		const getActivePersonaName = () => this.#getActivePersonaNameFn();
 		return {
 			ui: this.#uiContext,
 			getContextUsage: () => this.#getContextUsageFn(),
@@ -521,7 +522,9 @@ export class ExtensionRunner {
 			hasPendingMessages: () => this.#hasPendingMessagesFn(),
 			shutdown: () => this.#shutdownHandler(),
 			getSystemPrompt: () => this.#getSystemPromptFn(),
-			activePersonaName: this.#getActivePersonaNameFn(),
+			get activePersonaName() {
+				return getActivePersonaName();
+			},
 			memory: this.#getMemoryFn?.(),
 		};
 	}

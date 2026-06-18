@@ -915,7 +915,7 @@ export class SelectorController {
 			.filter(a => a.mode === "primary")
 			.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
 		const agentDef = lastAgentName
-			? (agents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
+			? (primaryAgents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
 			: (primaryAgents[0] ?? null);
 		await this.ctx.session.applyAgentPersona(agentDef);
 		// Refresh terminal title to reflect the resumed session name / cwd.

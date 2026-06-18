@@ -33,12 +33,12 @@ function makeAgent(name: string, mode: "primary" | "subagent" = "primary", order
 
 interface TestHandle {
 	ctx: InteractiveModeContext;
-	applyAgentPersona: Mock<(def: AgentDefinition | null) => Promise<void>>;
+	applyAgentPersona: Mock<(def: AgentDefinition | null) => Promise<{ modelFailed?: string }>>;
 	getLastAgentName: Mock<() => string | undefined>;
 }
 
 function createHandle(lastAgentName: string | undefined = undefined): TestHandle {
-	const applyAgentPersona = vi.fn(async () => {});
+	const applyAgentPersona = vi.fn(async () => ({}));
 	const getLastAgentName = vi.fn(() => lastAgentName);
 
 	const ctx = {

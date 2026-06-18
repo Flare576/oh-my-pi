@@ -27,6 +27,7 @@ import { getEditorCommand, openInEditor } from "../../utils/external-editor";
 import { ensureSupportedImageInput, ImageInputTooLargeError, loadImageInput } from "../../utils/image-loading";
 import { resizeImage } from "../../utils/image-resize";
 import { generateSessionTitle, setSessionTerminalTitle } from "../../utils/title-generator";
+import { sanitizeStatusText } from "../shared";
 
 interface Expandable {
 	setExpanded(expanded: boolean): void;
@@ -1470,8 +1471,15 @@ export class InputController {
 	}
 
 	async cyclePersona(dir: 1 | -1): Promise<void> {
-		// I1: guard against rapid Tab presses racing through the async discoverAgents call
+		// Guard against rapid Tab presses racing through the async discoverAgents call.
 		if (this.#personaCycleInFlight) return;
+		// Block cycling while the main session is streaming: stamp timing could
+		// attribute the in-flight turn's messages to the next persona instead of
+		// the one that generated them, corrupting /resume inference.
+		if (this.ctx.session.isStreaming) {
+			this.ctx.showStatus("Persona cycling is paused while the session is streaming");
+			return;
+		}
 		this.#personaCycleInFlight = true;
 		try {
 			logger.debug("cyclePersona called", { dir });
@@ -1488,13 +1496,17 @@ export class InputController {
 			if (primary.length === 0) return;
 			const currentName = this.ctx.session.activePersonaName;
 			const currentIdx = primary.findIndex(a => a.name === currentName);
-			// I4: first forward Tab → index 0 ✓ (−1+1+N)%N=0
-			// first backward Shift+Tab → index N-1 ✓ (−1+N−1+N) not (−1−1+N)
 			const baseIdx = currentIdx === -1 && dir === -1 ? primary.length : currentIdx;
 			const nextIdx = (((baseIdx + dir) % primary.length) + primary.length) % primary.length;
-			logger.debug("cyclePersona switching", { from: currentName, to: primary[nextIdx].name });
-			await this.ctx.session.applyAgentPersona(primary[nextIdx]);
-			this.ctx.showStatus(`Persona: ${primary[nextIdx].name}`);
+			const next = primary[nextIdx];
+			const safeName = sanitizeStatusText(next.name);
+			logger.debug("cyclePersona switching", { from: currentName, to: next.name });
+			const { modelFailed } = await this.ctx.session.applyAgentPersona(next);
+			if (modelFailed) {
+				this.ctx.showStatus(`Persona: ${safeName} (model not available — using current)`);
+			} else {
+				this.ctx.showStatus(`Persona: ${safeName}`);
+			}
 		} finally {
 			this.#personaCycleInFlight = false;
 		}

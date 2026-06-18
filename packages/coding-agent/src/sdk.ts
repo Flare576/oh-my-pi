@@ -2658,19 +2658,23 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const primaryAgents = discoveredAgentsForPersona
 				.filter(a => a.mode === "primary")
 				.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
+			// Resolve --agent against primary agents only (case-insensitive).
+			// Non-primary/subagent definitions are spawn-only; loading one as the
+			// top-level persona would bypass the mode: "primary" opt-in contract.
 			const namedAgent = options.initialAgentName
-				? (discoveredAgentsForPersona.find(a => a.name === options.initialAgentName) ?? null)
+				? (primaryAgents.find(a => a.name.toLowerCase() === options.initialAgentName!.toLowerCase()) ?? null)
 				: null;
 			if (options.initialAgentName && !namedAgent) {
 				logger.warn(
-					`--agent: no agent named "${options.initialAgentName}" found; falling back to session or first primary`,
+					`--agent: no primary agent named "${options.initialAgentName}" found; falling back to session or first primary`,
 				);
 			}
-			// When no explicit --agent flag, infer from the last stamped entry so resuming
-			// a session restores the agent that was active when the session was saved.
+			// When no explicit --agent flag, infer from the last stamped entry so
+			// resuming a session restores the active persona. Restricted to primary
+			// agents so a stale/crafted subagent stamp cannot bypass the opt-in gate.
 			const sessionAgent =
 				namedAgent === null
-					? (discoveredAgentsForPersona.find(
+					? (primaryAgents.find(
 							a => a.name.toLowerCase() === (session.sessionManager.getLastAgentName() ?? "").toLowerCase(),
 						) ?? null)
 					: null;

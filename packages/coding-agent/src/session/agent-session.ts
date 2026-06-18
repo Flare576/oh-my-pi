@@ -6817,12 +6817,13 @@ export class AgentSession {
 	 * Replaces the last prompt block with the persona's systemPrompt,
 	 * preserving global blocks. Also applies the persona's model if configured.
 	 */
-	async applyAgentPersona(def: AgentDefinition | null): Promise<void> {
+	async applyAgentPersona(def: AgentDefinition | null): Promise<{ modelFailed?: string }> {
 		logger.debug("applyAgentPersona called", { name: def?.name ?? null });
-		// Resolve and apply the model before mutating visible persona state so
-		// callers only observe a fully switched persona. applyRoleModel can fail
-		// (e.g. model not found) — in that case we still apply the prompt/persona
-		// change but skip the model swap rather than leaving the session half-switched.
+		// Apply the model before mutating visible persona state. Failure is returned
+		// as { modelFailed } so callers that show UI can surface a visible warning;
+		// the persona prompt/state still applies so users get the HOW block even if
+		// their model config is incomplete.
+		let modelFailed: string | undefined;
 		if (def?.model?.length) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
@@ -6841,9 +6842,10 @@ export class AgentSession {
 							explicitThinkingLevel: resolved.explicitThinkingLevel,
 						});
 					} catch (err) {
+						modelFailed = String(err);
 						logger.warn("applyAgentPersona: model swap failed, keeping current model", {
 							model: modelStr,
-							err: String(err),
+							err: modelFailed,
 						});
 					}
 					break;
@@ -6856,6 +6858,7 @@ export class AgentSession {
 			this.#personaBlock !== null ? [...this.#globalBlocks, this.#personaBlock] : [...this.#globalBlocks];
 		this.agent.setSystemPrompt(this.#baseSystemPrompt);
 		this.#emitPersonaChangedEvent(def);
+		return modelFailed !== undefined ? { modelFailed } : {};
 	}
 
 	#emitPersonaChangedEvent(def: AgentDefinition | null): void {
@@ -8511,9 +8514,8 @@ export class AgentSession {
 		};
 
 		this.#todoReminderAwaitingProgress = true;
-		// Inject reminder and persist it so the JSONL transcript matches model context.
 		this.agent.appendMessage(reminderMessage);
-		this.sessionManager.appendMessage(reminderMessage);
+		this.sessionManager.appendMessage(reminderMessage, this.activePersonaName ?? undefined);
 		this.#scheduleAgentContinue({ generation: this.#promptGeneration });
 		return true;
 	}

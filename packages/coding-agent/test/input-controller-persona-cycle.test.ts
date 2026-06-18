@@ -46,6 +46,7 @@ function createContext() {
 
 	const applyAgentPersona = vi.fn(async (def: AgentDefinition | null) => {
 		state.personaName = def?.name ?? null;
+		return {};
 	});
 
 	const showStatus = vi.fn();
@@ -243,7 +244,7 @@ describe("InputController.cyclePersona", () => {
 		const { ctx, applyAgentPersona } = createContext();
 		const controller = new InputController(ctx);
 
-		const { promise, resolve } = Promise.withResolvers<void>();
+		const { promise, resolve } = Promise.withResolvers<{ modelFailed?: string }>();
 		applyAgentPersona.mockReturnValue(promise);
 
 		vi.spyOn(discovery, "discoverAgents").mockResolvedValue({
@@ -256,7 +257,7 @@ describe("InputController.cyclePersona", () => {
 		const p1 = controller.cyclePersona(1);
 		const p2 = controller.cyclePersona(1);
 
-		resolve();
+		resolve({});
 		await Promise.all([p1, p2]);
 
 		expect(applyAgentPersona).toHaveBeenCalledTimes(1);
