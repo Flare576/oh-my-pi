@@ -46,6 +46,7 @@ function createHandle(lastAgentName: string | undefined = undefined): TestHandle
 		session: {
 			switchSession: vi.fn(async () => true),
 			applyAgentPersona,
+			settings: { get: (key: string) => (key === "task.disabledAgents" ? [] : key === "task.agentModelOverrides" ? {} : undefined) },
 		},
 		sessionManager: {
 			getCwd: () => "/tmp/test-project",

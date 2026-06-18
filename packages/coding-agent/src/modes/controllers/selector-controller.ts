@@ -912,8 +912,9 @@ export class SelectorController {
 		// stamped agent definition no longer exists on disk.
 		const { agents } = await discoverAgents(newCwd);
 		const lastAgentName = this.ctx.sessionManager.getLastAgentName();
+		const disabledAgents = this.ctx.session.settings.get("task.disabledAgents") as string[];
 		const primaryAgents = agents
-			.filter(a => a.mode === "primary")
+			.filter(a => a.mode === "primary" && !disabledAgents.includes(a.name))
 			.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
 		const agentDef = lastAgentName
 			? (primaryAgents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
