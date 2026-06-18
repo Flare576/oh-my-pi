@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import { Agent } from "@oh-my-pi/pi-agent-core";
 import { Effort } from "@oh-my-pi/pi-ai";
@@ -136,5 +136,105 @@ describe("AgentSession persona swap", () => {
 		// ["initial", "HOW-beta"] — dropping the MCP tool instructions.
 		await session.applyAgentPersona(makePersona("beta", "HOW-beta"));
 		expect(session.systemPrompt).toEqual(["initial", "mcp-tool-instructions", "HOW-beta"]);
+	});
+});
+
+describe("applyAgentPersona — model behavior", () => {
+	let tempDir: TempDir;
+	let session: AgentSession;
+	const authStorages: AuthStorage[] = [];
+
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@pi-persona-model-");
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		if (session) await session.dispose();
+		for (const as of authStorages.splice(0)) as.close();
+		tempDir.removeSync();
+	});
+
+	async function createSession() {
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: {
+				model,
+				systemPrompt: ["global-block"],
+				tools: [],
+				messages: [],
+				thinkingLevel: Effort.Low,
+			},
+		});
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+		});
+	}
+
+	it("applies the first resolvable model from the persona's model list", async () => {
+		await createSession();
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-opus-4-5"] };
+
+		const result = await session.applyAgentPersona(persona);
+
+		expect(result).toEqual({});
+		expect(session.model?.id).toBe("claude-opus-4-5");
+	});
+
+	it("returns { modelFailed } and keeps current model when applyRoleModel throws", async () => {
+		await createSession();
+		const originalModelId = session.model?.id;
+		vi.spyOn(session, "applyRoleModel").mockRejectedValue(new Error("forced failure"));
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-sonnet-4-5"] };
+
+		const result = await session.applyAgentPersona(persona);
+
+		expect(typeof result.modelFailed).toBe("string");
+		// Persona HOW block still applies despite model failure
+		expect(session.activePersonaName).toBe("beta");
+		// Model is unchanged
+		expect(session.model?.id).toBe(originalModelId);
+	});
+
+	it("records model_change entry for user-initiated cycle (default recordModelChange)", async () => {
+		await createSession();
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-sonnet-4-5"] };
+
+		await session.applyAgentPersona(persona);
+
+		const branch = session.sessionManager.getBranch();
+		const modelEntries = branch.filter(e => e.type === "model_change");
+		expect(modelEntries.length).toBeGreaterThan(0);
+	});
+
+	it("does NOT record model_change when recordModelChange: false", async () => {
+		await createSession();
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-sonnet-4-5"] };
+
+		await session.applyAgentPersona(persona, { recordModelChange: false });
+
+		const branch = session.sessionManager.getBranch();
+		const modelEntries = branch.filter(e => e.type === "model_change");
+		expect(modelEntries).toHaveLength(0);
+	});
+
+	it("does NOT record thinking_level_change when recordModelChange: false and persona has explicit thinking", async () => {
+		await createSession();
+		// :high gives explicitThinkingLevel: true; initial session level is Effort.Low so it IS changing
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-sonnet-4-5:high"] };
+
+		await session.applyAgentPersona(persona, { recordModelChange: false });
+
+		const branch = session.sessionManager.getBranch();
+		const thinkingEntries = branch.filter(e => e.type === "thinking_level_change");
+		expect(thinkingEntries).toHaveLength(0);
 	});
 });

@@ -138,6 +138,7 @@ import type { Rule } from "../capability/rule";
 import { shouldEnableAppendOnlyContext } from "../config/append-only-context-mode";
 import type { ModelRegistry } from "../config/model-registry";
 import {
+	extractExplicitThinkingSelector,
 	filterAvailableModelsByEnabledPatterns,
 	formatModelSelectorValue,
 	formatModelString,
@@ -231,7 +232,7 @@ import {
 	type SecretObfuscator,
 } from "../secrets/obfuscator";
 import { invalidateHostMetadata } from "../ssh/connection-manager";
-import type { AgentDefinition } from "../task/types";
+import type { AgentDefinition, AgentSource } from "../task/types";
 import {
 	AUTO_THINKING,
 	type ConfiguredThinkingLevel,
@@ -338,7 +339,7 @@ export type AgentSessionEvent =
 			resolved?: Effort;
 	  }
 	| { type: "goal_updated"; goal: Goal | null; state?: GoalModeState }
-	| { type: "persona_changed"; persona: AgentDefinition | null };
+	| { type: "persona_changed"; personaName: string | null; source?: AgentSource };
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
@@ -6688,10 +6689,16 @@ export class AgentSession {
 			this.sessionManager.appendModelChange(`${model.provider}/${model.id}`, role);
 			this.settings.getStorage()?.recordModelUsage(`${model.provider}/${model.id}`);
 		}
+		if (options?.persist) {
+			this.settings.setModelRole(
+				role,
+				this.#formatRoleModelValue(role, model, options.selector, options.thinkingLevel),
+			);
+		}
 
 		// Re-apply thinking for the newly selected model. Prefer the model's
 		// configured defaultLevel; otherwise preserve the current level (or auto).
-		this.#reapplyThinkingLevel(model.thinking?.defaultLevel);
+		this.#reapplyThinkingLevel(model.thinking?.defaultLevel, options?.record ?? true);
 		await this.#syncAfterModelChange(previousEditMode);
 	}
 
@@ -6803,7 +6810,7 @@ export class AgentSession {
 	async applyRoleModel(entry: ResolvedRoleModel, options?: { record?: boolean }): Promise<void> {
 		await this.setModel(entry.model, entry.role, { record: options?.record });
 		if (entry.explicitThinkingLevel && entry.thinkingLevel !== undefined) {
-			this.setThinkingLevel(entry.thinkingLevel);
+			this.setThinkingLevel(entry.thinkingLevel, false, options?.record ?? true);
 		}
 	}
 
@@ -6863,7 +6870,7 @@ export class AgentSession {
 	}
 
 	#emitPersonaChangedEvent(def: AgentDefinition | null): void {
-		this.#emit({ type: "persona_changed", persona: def });
+		this.#emit({ type: "persona_changed", personaName: def?.name ?? null, source: def?.source });
 	}
 
 	/**
@@ -6990,7 +6997,7 @@ export class AgentSession {
 	 * persisted when real user turns are classified so resumed sessions keep the
 	 * last resolved effort instead of reverting to pending auto.
 	 */
-	setThinkingLevel(level: ConfiguredThinkingLevel | undefined, persist: boolean = false): void {
+	setThinkingLevel(level: ConfiguredThinkingLevel | undefined, persist: boolean = false, record: boolean = true): void {
 		if (level === AUTO_THINKING) {
 			const provisional = resolveProvisionalAutoLevel(this.model);
 			const wasAuto = this.#autoThinking;
@@ -7016,7 +7023,9 @@ export class AgentSession {
 		this.#applyThinkingLevelToAgent(effectiveLevel);
 
 		if (isChanging) {
-			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+			if (record) {
+				this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+			}
 			if (persist && effectiveLevel !== undefined && effectiveLevel !== ThinkingLevel.Off) {
 				this.settings.set("defaultThinkingLevel", effectiveLevel);
 			}
@@ -7029,8 +7038,8 @@ export class AgentSession {
 	 * (re-clamping the provisional level to the new model); otherwise re-applies the
 	 * preferred default or the current effective level.
 	 */
-	#reapplyThinkingLevel(preferredDefault?: ThinkingLevel): void {
-		this.setThinkingLevel(this.#autoThinking ? AUTO_THINKING : (preferredDefault ?? this.#thinkingLevel));
+	#reapplyThinkingLevel(preferredDefault?: ThinkingLevel, record: boolean = true): void {
+		this.setThinkingLevel(this.#autoThinking ? AUTO_THINKING : (preferredDefault ?? this.#thinkingLevel), false, record);
 	}
 
 	/**
@@ -8817,6 +8826,23 @@ export class AgentSession {
 	#getModelKey(model: Model): string {
 		return `${model.provider}/${model.id}`;
 	}
+	#formatRoleModelValue(
+		role: string,
+		model: Model,
+		selectorOverride?: string,
+		thinkingLevelOverride?: ThinkingLevel,
+	): string {
+		const modelKey = selectorOverride ?? `${model.provider}/${model.id}`;
+		if (thinkingLevelOverride !== undefined) {
+			return formatModelSelectorValue(modelKey, thinkingLevelOverride);
+		}
+		const existingRoleValue = this.settings.getModelRole(role);
+		if (!existingRoleValue) return modelKey;
+
+		const thinkingLevel = extractExplicitThinkingSelector(existingRoleValue, this.settings);
+		return formatModelSelectorValue(modelKey, thinkingLevel);
+	}
+
 	#resolveContextPromotionConfiguredTarget(currentModel: Model, availableModels: Model[]): Model | undefined {
 		const configuredTarget = currentModel.contextPromotionTarget?.trim();
 		if (!configuredTarget) return undefined;
