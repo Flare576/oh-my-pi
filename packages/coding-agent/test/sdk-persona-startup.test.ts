@@ -197,4 +197,48 @@ describe("createAgentSession — startup persona loading", () => {
 		const opts = spy.mock.calls[0][1] as { applyModel?: boolean } | undefined;
 		expect(opts?.applyModel).not.toBe(false);
 	});
+
+	it("invalid --agent does not fall through to session stamp", async () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(userMsg(), "beta"); // stamp says beta
+
+		// Provide --agent with a name that doesn't match any primary agent (typo).
+		const session = await create(
+			sm,
+			[makeAgent("alpha", "primary", 1), makeAgent("beta", "primary", 2)],
+			"nonexistent-typo",
+		);
+
+		// Must fall back to first primary ("alpha"), NOT restore the stamp ("beta").
+		// An explicitly rejected flag should never silently load an unrelated persona.
+		expect(session.activePersonaName).toBe("alpha");
+	});
+
+	it("fresh startup passes recordModelChange: true so persona model survives next resume", async () => {
+		const sm = SessionManager.inMemory(); // no stamp — genuinely fresh
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"])]);
+
+		// recordModelChange must be true: the model_change must be written to history
+		// so that the next resume (applyModel: false) still runs the correct model.
+		expect(spy).toHaveBeenCalledOnce();
+		expect(spy.mock.calls[0][1]).toMatchObject({ recordModelChange: true });
+	});
+
+	it("explicit --agent startup passes recordModelChange: true", async () => {
+		const sm = SessionManager.inMemory();
+		sm.appendMessage(userMsg(), "alpha");
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		// --agent beta overrides the stamp; beta has a model — must be recorded.
+		await create(
+			sm,
+			[makeAgent("alpha", "primary", 1), makeAgent("beta", "primary", 2, ["anthropic/claude-sonnet-4-5"])],
+			"beta",
+		);
+
+		expect(spy).toHaveBeenCalledOnce();
+		expect(spy.mock.calls[0][1]).toMatchObject({ recordModelChange: true });
+	});
 });

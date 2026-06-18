@@ -2666,30 +2666,27 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				: null;
 			if (options.initialAgentName && !namedAgent) {
 				logger.warn(
-					`--agent: no primary agent named "${options.initialAgentName}" found; falling back to session or first primary`,
+					`--agent: no primary agent named "${options.initialAgentName}" found; falling back to first primary`,
 				);
 			}
-			// When no explicit --agent flag, infer from the last stamped entry so
-			// resuming a session restores the active persona. Restricted to primary
-			// agents so a stale/crafted subagent stamp cannot bypass the opt-in gate.
+			// Restore from the last session stamp only when no --agent flag was
+			// given at all. An invalid --agent (typo/subagent name) must not
+			// silently load an unrelated prior persona — it should fall through
+			// to the first primary instead.
 			const sessionAgent =
-				namedAgent === null
+				options.initialAgentName === undefined
 					? (primaryAgents.find(
 							a => a.name.toLowerCase() === (session.sessionManager.getLastAgentName() ?? "").toLowerCase(),
 						) ?? null)
 					: null;
 			const startAgent = namedAgent ?? sessionAgent ?? primaryAgents[0] ?? null;
-			// recordModelChange: false — startup restore should not write a model_change
-			// session entry; reopening the same session would otherwise accumulate stale
-			// entries before the user sends anything.
 			if (startAgent) {
-				// Skip model application when the persona was inferred from a session
-				// stamp (sessionAgent): the session model is already restored from
-				// history, same as the /resume path. Only apply the model when the
-				// user explicitly passed --agent or this is a genuinely fresh session
-				// starting with the first primary (no stamp).
+				// Stamp-restore skips model application (session model already
+				// correct from history); fresh startup and explicit --agent apply
+				// the persona model AND record the change so the next resume's
+				// applyModel:false path still runs the right model.
 				const applyModel = startAgent !== sessionAgent;
-				const { modelFailed } = await session.applyAgentPersona(startAgent, { recordModelChange: false, applyModel });
+				const { modelFailed } = await session.applyAgentPersona(startAgent, { recordModelChange: applyModel, applyModel });
 				if (modelFailed) {
 					logger.warn(`--agent: persona "${startAgent.name}" model not available — using current model`, {
 						err: modelFailed,
