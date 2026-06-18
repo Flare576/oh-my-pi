@@ -6839,7 +6839,7 @@ export class AgentSession {
 	 */
 	async applyAgentPersona(
 		def: AgentDefinition | null,
-		options?: { recordModelChange?: boolean },
+		options?: { recordModelChange?: boolean; applyModel?: boolean },
 	): Promise<{ modelFailed?: string }> {
 		logger.debug("applyAgentPersona called", { name: def?.name ?? null });
 		// Apply the model before mutating visible persona state. Failure is returned
@@ -6847,7 +6847,7 @@ export class AgentSession {
 		// the persona prompt/state still applies so users get the HOW block even if
 		// their model config is incomplete.
 		let modelFailed: string | undefined;
-		if (def?.model?.length) {
+		if (def?.model?.length && options?.applyModel !== false) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
 			let modelApplied = false;

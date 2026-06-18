@@ -918,7 +918,7 @@ export class SelectorController {
 		const agentDef = lastAgentName
 			? (primaryAgents.find(a => a.name.toLowerCase() === lastAgentName.toLowerCase()) ?? primaryAgents[0] ?? null)
 			: (primaryAgents[0] ?? null);
-		const { modelFailed } = await this.ctx.session.applyAgentPersona(agentDef, { recordModelChange: false });
+		const { modelFailed } = await this.ctx.session.applyAgentPersona(agentDef, { recordModelChange: false, applyModel: false });
 		const personaWarning = modelFailed && agentDef ? ` (persona "${sanitizeStatusText(agentDef.name)}" model unavailable)` : "";
 		// Refresh terminal title to reflect the resumed session name / cwd.
 		this.#refreshSessionTerminalTitle();

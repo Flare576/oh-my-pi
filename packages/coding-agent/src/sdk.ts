@@ -2688,7 +2688,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					logger.warn(`--agent: persona "${startAgent.name}" model not available — using current model`, {
 						err: modelFailed,
 					});
-					session.emitNotice("warning", `Persona "${startAgent.name}" loaded — model not available, using current model`);
+					// Sanitize frontmatter name before embedding in a TUI notice string.
+					const safePersonaName = startAgent.name.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/ +/g, " ").trim();
+					session.emitNotice("warning", `Persona "${safePersonaName}" loaded — model not available, using current model`);
 				}
 			}
 		}
