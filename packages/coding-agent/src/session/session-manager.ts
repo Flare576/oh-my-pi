@@ -1141,8 +1141,10 @@ export class SessionManager {
 			| BashExecutionMessage
 			| PythonExecutionMessage
 			| FileMentionMessage,
+		agent?: string,
 	): string {
 		const entry: SessionMessageEntry = { type: "message", ...this.#freshEntryFields(), message };
+		if (agent) entry.agent = agent;
 		this.#recordEntry(entry);
 		return entry.id;
 	}

@@ -2449,7 +2449,7 @@ export class AgentSession {
 				event.message.role === "fileMention"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-				if (event.message.role === "assistant") {
+			if (event.message.role === "assistant") {
 					const assistantMsg = event.message as AssistantMessage;
 					if (assistantMsg.stopReason !== "aborted" && assistantMsg.stopReason !== "error" && assistantMsg.usage) {
 						assistantMsg.contextSnapshot = {
@@ -2458,7 +2458,7 @@ export class AgentSession {
 						};
 					}
 				}
-				this.sessionManager.appendMessage(event.message);
+				this.sessionManager.appendMessage(event.message, this.activePersonaName ?? undefined);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -10475,7 +10475,7 @@ export class AgentSession {
 			this.agent.appendMessage(bashMessage);
 
 			// Save to session
-			this.sessionManager.appendMessage(bashMessage);
+			this.sessionManager.appendMessage(bashMessage, this.activePersonaName ?? undefined);
 		}
 	}
 
@@ -10510,7 +10510,7 @@ export class AgentSession {
 			this.agent.appendMessage(bashMessage);
 
 			// Save to session
-			this.sessionManager.appendMessage(bashMessage);
+			this.sessionManager.appendMessage(bashMessage, this.activePersonaName ?? undefined);
 		}
 
 		this.#pendingBashMessages = [];
@@ -10621,7 +10621,7 @@ export class AgentSession {
 			this.#pendingPythonMessages.push(pythonMessage);
 		} else {
 			this.agent.appendMessage(pythonMessage);
-			this.sessionManager.appendMessage(pythonMessage);
+			this.sessionManager.appendMessage(pythonMessage, this.activePersonaName ?? undefined);
 		}
 	}
 
@@ -10684,7 +10684,7 @@ export class AgentSession {
 
 		for (const pythonMessage of this.#pendingPythonMessages) {
 			this.agent.appendMessage(pythonMessage);
-			this.sessionManager.appendMessage(pythonMessage);
+			this.sessionManager.appendMessage(pythonMessage, this.activePersonaName ?? undefined);
 		}
 
 		this.#pendingPythonMessages = [];

@@ -31,6 +31,11 @@ export interface SessionEntryBase {
 
 export interface SessionMessageEntry extends SessionEntryBase {
 	type: "message";
+	/** Name of the active agent definition when this message was recorded.
+	 * Mirrors the `agent` field on OpenCode message rows; omitted for sessions
+	 * without an active agent definition (vanilla Pi, or OMP before an agent
+	 * is applied). */
+	agent?: string;
 	message: AgentMessage;
 }
 
