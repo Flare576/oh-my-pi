@@ -6857,27 +6857,28 @@ export class AgentSession {
 					matchPreferences,
 					modelRegistry: this.#modelRegistry,
 				});
-				if (resolved.model) {
-					try {
-						await this.applyRoleModel(
-							{
-								role: "persona",
-								model: resolved.model,
-								thinkingLevel: resolved.thinkingLevel,
-								explicitThinkingLevel: resolved.explicitThinkingLevel,
-							},
-							{ record: options?.recordModelChange ?? true },
-						);
-						modelApplied = true;
-					} catch (err) {
-						modelFailed = String(err);
-						logger.warn("applyAgentPersona: model swap failed, keeping current model", {
-							model: modelStr,
-							err: modelFailed,
-						});
-					}
-					break;
+			if (resolved.model) {
+				try {
+					await this.applyRoleModel(
+						{
+							role: "persona",
+							model: resolved.model,
+							thinkingLevel: resolved.thinkingLevel,
+							explicitThinkingLevel: resolved.explicitThinkingLevel,
+						},
+						{ record: options?.recordModelChange ?? true },
+					);
+					modelApplied = true;
+					break; // success — stop trying further candidates
+				} catch (err) {
+					// Auth failure or other error — log and try the next candidate.
+					modelFailed = String(err);
+					logger.warn("applyAgentPersona: model swap failed, trying next candidate", {
+						model: modelStr,
+						err: modelFailed,
+					});
 				}
+			}
 			}
 			// All model strings iterated without a resolvable match — report failure so
 			// callers (startup, resume, Tab cycle) can surface a visible warning instead
@@ -6888,6 +6889,13 @@ export class AgentSession {
 					models: def.model,
 				});
 			}
+		}
+		// Apply top-level thinking level from frontmatter if set and this is a
+		// user-initiated action. The model-selector suffix (:high) already handled
+		// thinking via applyRoleModel; this covers the case where the persona sets
+		// thinking without specifying a model string suffix.
+		if (def?.thinkingLevel !== undefined && options?.applyModel !== false && options?.recordModelChange !== false) {
+			this.setThinkingLevel(def.thinkingLevel, false, options?.recordModelChange ?? true);
 		}
 		this.#activePersona = def;
 		this.#personaBlock = def?.systemPrompt ?? null;
