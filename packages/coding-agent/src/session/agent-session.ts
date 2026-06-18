@@ -6848,10 +6848,18 @@ export class AgentSession {
 		// their model config is incomplete.
 		let modelFailed: string | undefined;
 		let modelApplied = false;
-		if (def?.model?.length && options?.applyModel !== false) {
+		// Check per-agent model override from /agents settings — takes precedence
+		// over frontmatter model, matching the behavior for spawned agents.
+		const agentModelOverrides = this.settings.get("task.agentModelOverrides") as Record<string, string | undefined>;
+		const settingsModelOverride = def?.name ? agentModelOverrides[def.name] : undefined;
+		const effectiveModelList = [
+			...(settingsModelOverride ? [settingsModelOverride] : []),
+			...(def?.model ?? []),
+		];
+		if (effectiveModelList.length && options?.applyModel !== false) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
-			for (const modelStr of def.model) {
+			for (const modelStr of effectiveModelList) {
 				const resolved = resolveModelRoleValue(modelStr, availableModels, {
 					settings: this.settings,
 					matchPreferences,
@@ -6884,9 +6892,9 @@ export class AgentSession {
 			// callers (startup, resume, Tab cycle) can surface a visible warning instead
 			// of silently keeping whatever model was previously active.
 			if (!modelApplied && !modelFailed) {
-				modelFailed = `No model from [${def.model.join(", ")}] could be resolved`;
+				modelFailed = `No model from [${effectiveModelList.join(", ")}] could be resolved`;
 				logger.warn("applyAgentPersona: no persona model could be resolved, keeping current model", {
-					models: def.model,
+					models: effectiveModelList,
 				});
 			}
 		}

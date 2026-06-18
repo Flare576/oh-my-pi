@@ -1490,8 +1490,9 @@ export class InputController {
 		try {
 			logger.debug("cyclePersona called", { dir });
 			const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
+			const disabledAgents = this.ctx.session.settings.get("task.disabledAgents") as string[];
 			const primary = agents
-				.filter(a => a.mode === "primary")
+				.filter(a => a.mode === "primary" && !disabledAgents.includes(a.name))
 				.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
 			logger.debug("cyclePersona agents found", {
 				total: agents.length,

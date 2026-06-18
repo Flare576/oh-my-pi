@@ -2655,8 +2655,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		// Auto-load initial persona for top-level sessions
 		if (taskDepth === 0) {
 			const { agents: discoveredAgentsForPersona } = await discoverAgents(cwd);
+			const disabledAgents = settings.get("task.disabledAgents") as string[];
 			const primaryAgents = discoveredAgentsForPersona
-				.filter(a => a.mode === "primary")
+				.filter(a => a.mode === "primary" && !disabledAgents.includes(a.name))
 				.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
 			// Resolve --agent against primary agents only (case-insensitive).
 			// Non-primary/subagent definitions are spawn-only; loading one as the

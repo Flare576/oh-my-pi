@@ -17,6 +17,7 @@ import { theme } from "../../modes/theme/theme";
 import { matchesAppInterrupt, matchesSelectDown, matchesSelectUp } from "../../modes/utils/keybinding-matchers";
 import type { SessionTreeNode } from "../../session/session-entries";
 import { shortenPath } from "../../tools/render-utils";
+import { sanitizeStatusText } from "../shared";
 import { toPathList } from "../../tools/search";
 import { canonicalizeMessage } from "../../utils/thinking-display";
 import { DynamicBorder } from "./dynamic-border";
@@ -399,7 +400,7 @@ class TreeList implements Component {
 				parts.push("custom", entry.customType);
 				break;
 			case "persona_change":
-				parts.push("persona", entry.personaName);
+				parts.push("persona", sanitizeStatusText(entry.personaName ?? ""));
 				break;
 			case "label":
 				parts.push("label", entry.label ?? "");
@@ -684,7 +685,7 @@ class TreeList implements Component {
 				result = theme.fg("dim", `[label: ${entry.label ?? "(cleared)"}]`);
 				break;
 			case "persona_change":
-				result = theme.fg("dim", `[persona: ${entry.personaName}]`);
+				result = theme.fg("dim", `[persona: ${sanitizeStatusText(entry.personaName ?? "")}]`);
 				break;
 			default:
 				result = "";
