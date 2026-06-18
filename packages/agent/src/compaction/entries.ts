@@ -111,7 +111,8 @@ export interface ModeChangeEntry extends SessionEntryBase {
 
 export interface PersonaChangeEntry extends SessionEntryBase {
 	type: "persona_change";
-	personaName: string;
+	/** Name of the persona that became active, or null when explicitly cleared. */
+	personaName: string | null;
 }
 
 export interface CustomCompactionSessionEntries {}

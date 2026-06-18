@@ -6847,10 +6847,10 @@ export class AgentSession {
 		// the persona prompt/state still applies so users get the HOW block even if
 		// their model config is incomplete.
 		let modelFailed: string | undefined;
+		let modelApplied = false;
 		if (def?.model?.length && options?.applyModel !== false) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
-			let modelApplied = false;
 			for (const modelStr of def.model) {
 				const resolved = resolveModelRoleValue(modelStr, availableModels, {
 					settings: this.settings,
@@ -6906,11 +6906,19 @@ export class AgentSession {
 		// even when the user switched and exited before sending any message.
 		// Only for user-initiated actions (recordModelChange: true); restore paths
 		// already have the correct entry in history.
-		if (def && options?.recordModelChange !== false) {
-			this.sessionManager.appendPersonaChange(def.name);
+		// Record the persona switch so getLastAgentName() can recover it on resume
+		// even when the user switched and exited before sending any message.
+		// For explicit clears (def === null), write a null sentinel so a stale
+		// persona_change from a prior switch doesn't survive to the next resume.
+		// Only for user-initiated actions (recordModelChange !== false).
+		if (options?.recordModelChange !== false) {
+			this.sessionManager.appendPersonaChange(def?.name ?? null);
 		}
 		this.#emitPersonaChangedEvent(def);
-		return modelFailed !== undefined ? { modelFailed } : {};
+		// Only report modelFailed when no model was successfully applied — a
+		// fallback candidate that succeeded after an earlier auth failure still
+		// means the model is in a good state; the user should not see a warning.
+		return !modelApplied && modelFailed !== undefined ? { modelFailed } : {};
 	}
 
 	#emitPersonaChangedEvent(def: AgentDefinition | null): void {

@@ -173,7 +173,8 @@ export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
  */
 export interface PersonaChangeEntry extends SessionEntryBase {
 	type: "persona_change";
-	personaName: string;
+	/** Name of the persona that became active, or null when the persona was explicitly cleared. */
+	personaName: string | null;
 }
 
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */

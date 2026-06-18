@@ -1187,9 +1187,11 @@ export class SessionManager {
 	 * Append a persona-change record as a child of the current leaf, then advance
 	 * the leaf. Written on every user-initiated persona cycle so that
 	 * getLastAgentName() can recover the active persona on resume even when the
-	 * user switched and exited before sending any message.
+	 * user switched and exited before sending any message. Pass `null` when the
+	 * persona was explicitly cleared — the null sentinel prevents a stale prior
+	 * persona_change from surviving to the next resume.
 	 */
-	appendPersonaChange(personaName: string): string {
+	appendPersonaChange(personaName: string | null): string {
 		const entry: PersonaChangeEntry = { type: "persona_change", ...this.#freshEntryFields(), personaName };
 		this.#recordEntry(entry);
 		return entry.id;
@@ -1335,12 +1337,17 @@ export class SessionManager {
 	 * Scans backward for the most recent persona_change entry (written on every
 	 * user-initiated Tab cycle) or, for older sessions without that entry, falls
 	 * back to the agent field on the last stamped message.
-	 * Returns `undefined` when no persona has ever been selected. */
+	 * Returns `undefined` when no persona has ever been selected or when the most
+	 * recent persona_change carries a null sentinel (explicit clear). */
 	getLastAgentName(): string | undefined {
 		const branch = this.getBranch();
 		for (let index = branch.length - 1; index >= 0; index--) {
 			const entry = branch[index];
-			if (entry.type === "persona_change") return (entry as PersonaChangeEntry).personaName;
+			if (entry.type === "persona_change") {
+				const name = (entry as PersonaChangeEntry).personaName;
+				// null = explicit clear; stop scanning so a prior persona is not reloaded.
+				return name ?? undefined;
+			}
 			if (entry.type === "message" && typeof (entry as SessionMessageEntry).agent === "string") {
 				return (entry as SessionMessageEntry).agent;
 			}
