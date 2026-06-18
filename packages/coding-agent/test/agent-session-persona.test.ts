@@ -237,4 +237,21 @@ describe("applyAgentPersona — model behavior", () => {
 		const thinkingEntries = branch.filter(e => e.type === "thinking_level_change");
 		expect(thinkingEntries).toHaveLength(0);
 	});
+
+	it("returns { modelFailed } when no model in the list can be resolved", async () => {
+		await createSession();
+		const originalModelId = session.model?.id;
+		// Use a model string that will never match any available model (bad provider/id).
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["nonexistent-provider/nonexistent-model-xyz"] };
+
+		const result = await session.applyAgentPersona(persona);
+
+		// modelFailed must be set even though no exception was thrown — the model just
+		// couldn't be resolved from the registry.
+		expect(typeof result.modelFailed).toBe("string");
+		// Persona HOW block still applies.
+		expect(session.activePersonaName).toBe("beta");
+		// Model is unchanged.
+		expect(session.model?.id).toBe(originalModelId);
+	});
 });

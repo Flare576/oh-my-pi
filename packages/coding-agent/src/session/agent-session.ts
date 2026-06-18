@@ -6832,6 +6832,7 @@ export class AgentSession {
 		if (def?.model?.length) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
+			let modelApplied = false;
 			for (const modelStr of def.model) {
 				const resolved = resolveModelRoleValue(modelStr, availableModels, {
 					settings: this.settings,
@@ -6849,6 +6850,7 @@ export class AgentSession {
 							},
 							{ record: options?.recordModelChange ?? true },
 						);
+						modelApplied = true;
 					} catch (err) {
 						modelFailed = String(err);
 						logger.warn("applyAgentPersona: model swap failed, keeping current model", {
@@ -6858,6 +6860,15 @@ export class AgentSession {
 					}
 					break;
 				}
+			}
+			// All model strings iterated without a resolvable match — report failure so
+			// callers (startup, resume, Tab cycle) can surface a visible warning instead
+			// of silently keeping whatever model was previously active.
+			if (!modelApplied && !modelFailed) {
+				modelFailed = `No model from [${def.model.join(", ")}] could be resolved`;
+				logger.warn("applyAgentPersona: no persona model could be resolved, keeping current model", {
+					models: def.model,
+				});
 			}
 		}
 		this.#activePersona = def;
