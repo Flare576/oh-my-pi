@@ -2618,6 +2618,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// sdk.ts is the only place that has access to discoverAgents + settings,
 			// so the callback lives here and is called internally by switchSession().
 			resolvePersona: async (name, cwd) => {
+				// null = explicit clear sentinel — honor it (no persona on restore).
+				if (name === null) return null;
 				const { agents } = await discoverAgents(cwd);
 				const disabled = settings.get("task.disabledAgents") as string[];
 				const primary = agents

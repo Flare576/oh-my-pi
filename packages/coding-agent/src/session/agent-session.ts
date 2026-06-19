@@ -545,7 +545,7 @@ export interface AgentSessionConfig {
 	 * When absent, switchSession() leaves the active persona unchanged — callers must
 	 * handle restoration themselves or accept the stale persona.
 	 */
-	resolvePersona?: (name: string | undefined, cwd: string) => Promise<AgentDefinition | null>;
+	resolvePersona?: (name: string | null | undefined, cwd: string) => Promise<AgentDefinition | null>;
 	/**
 	 * Strip tool descriptions from provider-bound tool specs on side requests
 	 * (handoff). Must match the session-start value used to build the system
@@ -1250,7 +1250,7 @@ export class AgentSession {
 	#toolRegistry: Map<string, AgentTool>;
 	#transformContext: (messages: AgentMessage[], signal?: AbortSignal) => AgentMessage[] | Promise<AgentMessage[]>;
 	#onPayload: SimpleStreamOptions["onPayload"] | undefined;
-	#resolvePersona: ((name: string | undefined, cwd: string) => Promise<AgentDefinition | null>) | undefined;
+	#resolvePersona: ((name: string | null | undefined, cwd: string) => Promise<AgentDefinition | null>) | undefined;
 	#onResponse: SimpleStreamOptions["onResponse"] | undefined;
 	#onSseEvent: SimpleStreamOptions["onSseEvent"] | undefined;
 	#convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
@@ -6793,6 +6793,13 @@ export class AgentSession {
 
 		this.sessionManager.appendThinkingLevelChange(this.thinkingLevel);
 		this.sessionManager.appendServiceTierChange(this.serviceTier ?? null);
+		// Mirror the thinking/serviceTier pattern: apply and record the default persona
+		// for fresh-session semantics (/new is a clean slate — resolves to first primary).
+		// applyModel:false — the model is already set from startup or prior user action.
+		if (this.#resolvePersona) {
+			const def = await this.#resolvePersona(undefined, this.sessionManager.getCwd());
+			await this.applyAgentPersona(def, { recordModelChange: true, applyModel: false });
+		}
 		if (nextDiscoverySessionToolNames) {
 			await this.#applyActiveToolsByName(nextDiscoverySessionToolNames, { persistMCPSelection: false });
 			if (this.getSelectedMCPToolNames().length > 0) {

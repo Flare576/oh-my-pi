@@ -1348,16 +1348,17 @@ export class SessionManager {
 	 * Scans backward for the most recent persona_change entry (written on every
 	 * user-initiated Tab cycle) or, for older sessions without that entry, falls
 	 * back to the agent field on the last stamped message.
-	 * Returns `undefined` when no persona has ever been selected or when the most
-	 * recent persona_change carries a null sentinel (explicit clear). */
-	getLastAgentName(): string | undefined {
+	 * - `string` — a named persona is active
+	 * - `null`   — an explicit persona clear was recorded (null sentinel)
+	 * - `undefined` — no persona entry found (session has never selected one) */
+	getLastAgentName(): string | null | undefined {
 		const branch = this.getBranch();
 		for (let index = branch.length - 1; index >= 0; index--) {
 			const entry = branch[index];
 			if (entry.type === "persona_change") {
-				const name = (entry as PersonaChangeEntry).personaName;
-				// null = explicit clear; stop scanning so a prior persona is not reloaded.
-				return name ?? undefined;
+				// Return the raw name — null for explicit clear sentinel, string for a name.
+				// Callers distinguish null (clear) from undefined (no stamp).
+				return (entry as PersonaChangeEntry).personaName;
 			}
 			if (entry.type === "message" && typeof (entry as SessionMessageEntry).agent === "string") {
 				return (entry as SessionMessageEntry).agent;
