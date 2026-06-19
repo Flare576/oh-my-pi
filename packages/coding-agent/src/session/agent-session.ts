@@ -11671,6 +11671,7 @@ export class AgentSession {
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
+			await this.#restorePersonaForBranch();
 			this.#resetAdvisorSessionState();
 			this.#closeCodexProviderSessionsForHistoryRewrite();
 		}
@@ -11778,6 +11779,29 @@ export class AgentSession {
 	 * @param options.customInstructions Custom instructions for summarizer
 	 * @returns Result with editorText (if user message) and cancelled status
 	 */
+
+	/**
+	 * Re-applies the persona recorded in the current branch after any in-place
+	 * leaf navigation (navigateTree, branch). Mirrors the persona restoration in
+	 * switchSession() but without a settings reload — in-place navigation stays
+	 * on the same project so task.disabledAgents is already current.
+	 * No-op when no resolvePersona callback was provided at session creation.
+	 */
+	async #restorePersonaForBranch(): Promise<void> {
+		if (!this.#resolvePersona) return;
+		const name = this.sessionManager.getLastAgentName();
+		const cwd = this.sessionManager.getCwd();
+		const def = await this.#resolvePersona(name, cwd);
+		const { modelFailed } = await this.applyAgentPersona(def, {
+			recordModelChange: false,
+			applyModel: false,
+		});
+		if (modelFailed && def) {
+			const safeName = def.name.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/ +/g, " ").trim();
+			this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
+		}
+	}
+
 	async navigateTree(
 		targetId: string,
 		options: { summarize?: boolean; customInstructions?: string } = {},
@@ -11925,6 +11949,7 @@ export class AgentSession {
 		const displayContext = deobfuscateSessionContext(stateContext, this.#obfuscator);
 		await this.#restoreMCPSelectionsForSessionContext(displayContext);
 		this.agent.replaceMessages(displayContext.messages);
+		await this.#restorePersonaForBranch();
 		this.#resetAdvisorSessionState();
 		this.#syncTodoPhasesFromBranch();
 		this.#closeCodexProviderSessionsForHistoryRewrite();
