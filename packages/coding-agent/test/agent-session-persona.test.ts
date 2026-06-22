@@ -326,3 +326,52 @@ describe("applyAgentPersona — /agents override exclusivity", () => {
 	});
 });
 
+describe("newSession — model recording", () => {
+	let tempDir: TempDir;
+	let session: AgentSession;
+	const authStorages: AuthStorage[] = [];
+
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@pi-new-session-");
+	});
+
+	afterEach(async () => {
+		if (session) await session.dispose();
+		for (const as of authStorages.splice(0)) as.close();
+		tempDir.removeSync();
+	});
+
+	it("records current model in new session branch so resume can restore it", async () => {
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["global"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+		});
+
+		// Switch to a different model to simulate the "carry-over after persona switch" scenario.
+		const opusModel = getBundledModel("anthropic", "claude-opus-4-5");
+		if (!opusModel) throw new Error("claude-opus-4-5 not found in bundled models");
+		await session.setModel(opusModel, "default");
+		expect(session.model?.id).toBe("claude-opus-4-5");
+
+		await session.newSession();
+
+		// The new session branch must contain a model_change entry so resume can
+		// restore claude-opus-4-5 rather than defaulting to startup state.
+		const branch = session.sessionManager.getBranch();
+		const modelEntries = branch.filter(e => e.type === "model_change") as Array<{ model: string }>;
+		expect(modelEntries.length).toBeGreaterThan(0);
+		const recorded = modelEntries[modelEntries.length - 1].model;
+		expect(recorded).toBe("anthropic/claude-opus-4-5");
+	});
+});

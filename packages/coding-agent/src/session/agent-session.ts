@@ -6893,6 +6893,14 @@ export class AgentSession {
 
 		this.sessionManager.appendThinkingLevelChange(this.thinkingLevel, this.configuredThinkingLevel());
 		this.sessionManager.appendServiceTierChange(this.serviceTier ?? null);
+		// Record the carry-over model so resume can restore the exact model that
+		// produced turns in this session. applyModel:false keeps the in-memory model
+		// intact, but without this entry getRestorableSessionModels returns nothing
+		// and resume defaults to whatever the startup-time model is.
+		const currentModel = this.model;
+		if (currentModel) {
+			this.sessionManager.appendModelChange(`${currentModel.provider}/${currentModel.id}`);
+		}
 		// Mirror the thinking/serviceTier pattern: apply and record the default persona
 		// for fresh-session semantics (/new is a clean slate — resolves to first primary).
 		// applyModel:false — the model is already set from startup or prior user action.
