@@ -241,4 +241,25 @@ describe("createAgentSession — startup persona loading", () => {
 		expect(spy).toHaveBeenCalledOnce();
 		expect(spy.mock.calls[0][1]).toMatchObject({ recordModelChange: true });
 	});
+	it("honors explicit-clear null sentinel on startup — does not load first primary", async () => {
+		const sm = SessionManager.inMemory();
+		// Write a null persona_change to simulate a session that explicitly cleared its persona.
+		sm.appendPersonaChange(null);
+
+		const session = await create(sm, [makeAgent("alpha", "primary", 1)]);
+
+		// null sentinel must be preserved — first primary should NOT auto-load.
+		expect(session.activePersonaName).toBeNull();
+	});
+
+	it("--agent flag overrides explicit-clear null sentinel", async () => {
+		const sm = SessionManager.inMemory();
+		sm.appendPersonaChange(null);
+
+		const session = await create(sm, [makeAgent("alpha", "primary", 1)], "alpha");
+
+		// Explicit --agent overrides the sentinel.
+		expect(session.activePersonaName).toBe("alpha");
+	});
+
 });

@@ -2717,13 +2717,23 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// given at all. An invalid --agent (typo/subagent name) must not
 			// silently load an unrelated prior persona — it should fall through
 			// to the first primary instead.
+			// Extract before ?? coercion to distinguish null (explicit clear)
+			// from undefined (no stamp) — both would otherwise collapse to "".
+			const lastAgentName = session.sessionManager.getLastAgentName();
 			const sessionAgent =
-				options.initialAgentName === undefined
+				options.initialAgentName === undefined && lastAgentName !== null
 					? (primaryAgents.find(
-							a => a.name.toLowerCase() === (session.sessionManager.getLastAgentName() ?? "").toLowerCase(),
+							a => a.name.toLowerCase() === (lastAgentName ?? "").toLowerCase(),
 						) ?? null)
 					: null;
-			const startAgent = namedAgent ?? sessionAgent ?? primaryAgents[0] ?? null;
+			// When the explicit-clear sentinel (null) is present and no --agent flag
+			// overrides it, don't fall through to primaryAgents[0] — matches the
+			// resolvePersona callback behavior in switchSession/newSession/branch.
+			const startAgent =
+				namedAgent ??
+				(lastAgentName === null && options.initialAgentName === undefined
+					? null
+					: (sessionAgent ?? primaryAgents[0] ?? null));
 			if (startAgent) {
 				// Stamp-restore skips model application (session model already
 				// correct from history); fresh startup and explicit --agent apply
