@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [16.1.14] - 2026-06-22
+
+### Fixed
+
+- Enabled full Julia syntax highlighting support in highlightCode
+
+## [16.1.12] - 2026-06-21
+
+### Added
+
+- Added Julia syntax highlighting to `highlightCode`/`supportsLanguage` via a vendored `Julia.sublime-syntax` folded into syntect's default set (`jl`/`julia` aliases); syntect ships no Julia grammar.
+
+## [16.1.8] - 2026-06-20
+
+### Breaking Changes
+
+- Changed renderSnapcompactPng to return a promise instead of a string value
+
+### Fixed
+
+- Fixed directory `grep` continuing to walk large trees after the requested content match budget had already been satisfied, which could make broad coding-agent searches time out before returning the first page of matches ([#2738](https://github.com/can1357/oh-my-pi/issues/2738)).
+
 ## [16.0.11] - 2026-06-19
 
 ### Fixed

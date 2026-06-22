@@ -5,12 +5,9 @@
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
-	arkToWireSchema,
 	type Context,
 	EventStream,
 	isApiKeyResolver,
-	isArkSchema,
-	isZodSchema,
 	resolveApiKeyOnce,
 	seedApiKeyResolver,
 	streamSimple,
@@ -20,7 +17,6 @@ import {
 	type TSchema,
 	toolWireSchema,
 	validateToolArguments,
-	zodToWireSchema,
 } from "@oh-my-pi/pi-ai";
 import {
 	type Dialect,
@@ -125,7 +121,7 @@ class HarmonyLeakInterruption extends Error {
 		this.name = "HarmonyLeakInterruption";
 	}
 }
-function resolveOwnedDialectFromEnv(value: string | undefined): Dialect | undefined {
+export function resolveOwnedDialectFromEnv(value: string | undefined): Dialect | undefined {
 	switch (value) {
 		case "1":
 		case "true":
@@ -506,7 +502,7 @@ function createDetailedCapture(config: AgentLoopConfig): {
 	};
 }
 
-function normalizeMessagesForProvider(
+export function normalizeMessagesForProvider(
 	messages: Context["messages"],
 	model: AgentLoopConfig["model"],
 ): Context["messages"] {
@@ -591,23 +587,15 @@ export function normalizeTools(
 		// specs without their descriptions (top-level + nested schema annotations)
 		// so they are not duplicated on the wire. Strip the STABLE wire schema (the
 		// memoized `stripSchemaDescriptions` result is reused across requests), then
-		// re-inject `_i` (without its hint, which `describeIntent: false` omits) so
+		// re-inject `i` (without its hint, which `describeIntent: false` omits) so
 		// intent tracing keeps the field while no descriptions ride the wire.
 		if (pruneDescriptions) {
 			let parameters = stripSchemaDescriptions(toolWireSchema(t)) as TSchema;
 			if (doInjectIntent) parameters = injectIntentIntoSchema(parameters, intentMode, false) as TSchema;
 			return { ...t, parameters, description: "" };
 		}
-		let parameters: TSchema = t.parameters;
-		if (doInjectIntent) {
-			if (isZodSchema(parameters)) {
-				parameters = injectIntentIntoSchema(zodToWireSchema(parameters), intentMode) as TSchema;
-			} else if (isArkSchema(parameters)) {
-				parameters = injectIntentIntoSchema(arkToWireSchema(parameters), intentMode) as TSchema;
-			} else {
-				parameters = injectIntentIntoSchema(parameters, intentMode) as TSchema;
-			}
-		}
+		let parameters = toolWireSchema(t) as TSchema;
+		if (doInjectIntent) parameters = injectIntentIntoSchema(parameters, intentMode) as TSchema;
 		const description = t.description ?? "";
 		const examplesBlock = exampleDialect
 			? renderToolExamples({ ...t, parameters }, exampleDialect, doInjectIntent ? INTENT_FIELD : undefined)
@@ -718,7 +706,7 @@ async function runLoopBody(
 	stepCounter: StepCounter,
 	streamFn?: StreamFn,
 ): Promise<void> {
-	let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+	let deadlineTimer: Timer | undefined;
 	if (config.deadline !== undefined) {
 		const deadlineAbortController = new AbortController();
 		const delay = config.deadline - Date.now();
@@ -1173,7 +1161,7 @@ async function streamAssistantResponse(
 		};
 	}
 	if (config.transformProviderContext) {
-		llmContext = config.transformProviderContext(llmContext, config.model);
+		llmContext = await config.transformProviderContext(llmContext, config.model);
 	}
 
 	// Owned tool calling: take tool calls away from the provider and run them
@@ -1194,6 +1182,10 @@ async function streamAssistantResponse(
 
 	const dynamicReasoning = config.getReasoning?.();
 	const dynamicDisableReasoning = config.getDisableReasoning?.();
+	// `getServiceTier` is authoritative when present (replaces the static tier
+	// for both the wire request and telemetry), so callers can scope priority
+	// per model without touching the shared session `serviceTier`.
+	const effectiveServiceTier = config.getServiceTier ? config.getServiceTier(config.model) : config.serviceTier;
 	const harmonyMitigationEnabled = isHarmonyLeakMitigationTarget(config.model);
 	const harmonyAbortController = harmonyMitigationEnabled ? new AbortController() : undefined;
 	const requestSignal = harmonyAbortController
@@ -1241,7 +1233,7 @@ async function streamAssistantResponse(
 			topP: config.topP,
 			topK: config.topK,
 			presencePenalty: config.presencePenalty,
-			serviceTier: config.serviceTier,
+			serviceTier: effectiveServiceTier,
 			reasoningEffort: typeof effectiveReasoning === "string" ? effectiveReasoning : undefined,
 			toolChoice: effectiveToolChoice,
 			tools: llmContext.tools,
@@ -1263,7 +1255,7 @@ async function streamAssistantResponse(
 	const finishChat = async (message: AssistantMessage): Promise<void> => {
 		await finishChatSpan(telemetry, chatSpan, message, {
 			stepNumber: chatStepNumber,
-			serviceTier: config.serviceTier,
+			serviceTier: effectiveServiceTier,
 			responseHeaders: capturedHeaders,
 			baseUrl: config.model.baseUrl,
 		});
@@ -1279,6 +1271,7 @@ async function streamAssistantResponse(
 				reasoning: effectiveReasoning,
 				disableReasoning: effectiveDisableReasoning,
 				temperature: effectiveTemperature,
+				serviceTier: effectiveServiceTier,
 				signal: finalRequestSignal,
 				onResponse: captureOnResponse,
 			});
@@ -1546,20 +1539,6 @@ export function abortReasonText(signal: AbortSignal | undefined): string {
 	return "Request was aborted";
 }
 
-/** True when an abort carried a *deliberate*, human-meaningful reason — a string
- *  reason or a non-`AbortError` `Error` (TTSR rule match, user-interrupt label).
- *  A bare `abort()` (default `AbortError` `DOMException`) is anonymous and returns
- *  false. Used to decide whether a mid-stream tool call survives the abort: a
- *  deliberate interruption is a conscious decision made after the (partial) call
- *  was observed, so the block is retained and paired with a labeled placeholder;
- *  an anonymous abort drops incomplete calls whose args may be unsafe to replay. */
-function isExplicitAbortReason(signal: AbortSignal | undefined): boolean {
-	const reason = signal?.reason;
-	if (typeof reason === "string") return reason.trim().length > 0;
-	if (reason instanceof Error) return reason.name !== "AbortError" && reason.message.trim().length > 0;
-	return false;
-}
-
 function emitAbortedAssistantMessage(
 	partialMessage: AssistantMessage | null,
 	addedPartial: boolean,
@@ -1590,11 +1569,10 @@ function emitAbortedAssistantMessage(
 				errorMessage,
 				timestamp: Date.now(),
 			};
-	// A deliberate, labeled abort (TTSR rule match, user interrupt) keeps every
-	// committed tool-call block so the loop pairs it with a placeholder labeled by
-	// `errorMessage`; an anonymous abort still drops calls that never completed
-	// (no `toolcall_end`), whose partial args are unsafe to replay.
-	const retained = isExplicitAbortReason(requestSignal) ? base : retainCompletedToolCalls(base, completedToolCallIds);
+	// Only tool calls that reached `toolcall_end` survive abort/error replay. A
+	// labeled user interrupt still surfaces through `errorMessage`, but partial
+	// tool arguments are unsafe to keep and can carry incomplete provider IDs.
+	const retained = retainCompletedToolCalls(base, completedToolCallIds);
 	const abortedMessage = snapshotAssistantMessage(retained);
 	if (addedPartial) {
 		context.messages[context.messages.length - 1] = abortedMessage;
@@ -1756,7 +1734,44 @@ async function executeToolCalls(
 				}
 			}
 		}
-		record.args = argsForExecution;
+		let effectiveArgs: Record<string, unknown>;
+		try {
+			if (!tool) throw new Error(`Tool ${toolCall.name} not found`);
+			effectiveArgs = validateToolArguments(tool, { ...toolCall, arguments: argsForExecution });
+		} catch (validationError) {
+			if (tool?.lenientArgValidation) {
+				effectiveArgs = { ...argsForExecution };
+				delete effectiveArgs.__parseError;
+				delete effectiveArgs.__rawJson;
+			} else {
+				if ("__parseError" in argsForExecution) {
+					record.args = {
+						__parseError: argsForExecution.__parseError,
+					};
+				} else {
+					record.args = argsForExecution;
+				}
+				emitToolResult(
+					record,
+					{
+						content: [
+							{
+								type: "text" as const,
+								text: validationError instanceof Error ? validationError.message : String(validationError),
+							},
+						],
+						details: {
+							isError: true,
+							error: validationError instanceof Error ? validationError.message : String(validationError),
+						},
+					},
+					true,
+				);
+				return;
+			}
+		}
+
+		record.args = effectiveArgs;
 		if (toolSignal.aborted) {
 			record.skipped = true;
 			recordSkippedTool(telemetry, {
@@ -1772,7 +1787,7 @@ async function executeToolCalls(
 			type: "tool_execution_start",
 			toolCallId: toolCall.id,
 			toolName: toolCall.name,
-			args: argsForExecution,
+			args: effectiveArgs,
 			intent: toolCall.intent,
 		});
 
@@ -1780,7 +1795,7 @@ async function executeToolCalls(
 			tool,
 			toolName: toolCall.name,
 			toolCallId: toolCall.id,
-			args: argsForExecution,
+			args: effectiveArgs,
 			parent: invokeAgentSpan,
 		});
 		if (toolSpan && toolCall.intent) {
@@ -1799,17 +1814,6 @@ async function executeToolCalls(
 					result = createToolSignalAbortedResult(toolSignal);
 					isError = true;
 					return;
-				}
-
-				let effectiveArgs: Record<string, unknown>;
-				try {
-					effectiveArgs = validateToolArguments(tool, { ...toolCall, arguments: argsForExecution });
-				} catch (validationError) {
-					if (tool.lenientArgValidation) {
-						effectiveArgs = argsForExecution;
-					} else {
-						throw validationError;
-					}
 				}
 
 				if (beforeToolCall) {

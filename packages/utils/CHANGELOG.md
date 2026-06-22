@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [16.1.8] - 2026-06-20
+
+### Added
+
+- Exported `removeSyncWithRetries()` as a standalone function so tests that manage their own temp dirs can use the same retry-on-EBUSY cleanup logic as `TempDir.removeSync()`.
+
+## [16.1.3] - 2026-06-19
+
+### Changed
+
+- Expanded the `TempDir` Windows retry window from 4×10ms to 40×25ms (1s total) to accommodate SQLite WAL/SHM file handle release delays
+
+### Fixed
+
+- Made EPIPE rejections from IPC `send()` to worker subprocesses (`syscall: "send"`) non-fatal: the global `unhandledRejection` handler now logs and continues instead of terminating the session when an optional subsystem's pipe breaks. A broken optional subsystem (TTS/STT/tiny-title/MCP) can no longer crash the whole agent session mid-task. ([#2997](https://github.com/can1357/oh-my-pi/issues/2997))
+
 ## [16.1.2] - 2026-06-19
 
 ### Added

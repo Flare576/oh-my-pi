@@ -503,6 +503,68 @@ describe("agentLoop with AgentMessage", () => {
 		}
 	});
 
+	it("surfaces validation error for malformed JSON parse sentinels without leaking __rawJson", async () => {
+		const toolSchema = type({ value: "string" });
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute() {
+				return { content: [] };
+			},
+		};
+
+		const context: AgentContext = { systemPrompt: [""], messages: [], tools: [tool] };
+
+		const rawJsonPayload = `{"i": Finding getAvailable definition, "value": "hello"}${"A".repeat(1000)}`;
+		const mock = createMockModel({
+			responses: [
+				{
+					content: [
+						{
+							type: "toolCall",
+							id: "tool-1",
+							name: "echo",
+							arguments: {
+								__parseError: "Unexpected token F in JSON at position 6",
+								__rawJson: rawJsonPayload,
+							},
+						},
+					],
+				},
+				{ content: ["done"] },
+			],
+		});
+		const config: AgentLoopConfig = { model: mock.model, convertToLlm: identityConverter };
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([createUserMessage("run echo")], context, config, undefined, mock.stream);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		// Validation should have failed and reported the parse error & truncated JSON
+		const toolResultMsg = events.find(e => e.type === "message_start" && e.message.role === "toolResult") as any;
+		expect(toolResultMsg).toBeDefined();
+		const resultText = toolResultMsg.message.content[0].text;
+		expect(resultText).toContain("Tool call arguments are not valid JSON.");
+		expect(resultText).toContain("Unexpected token F");
+		expect(resultText).toContain("[truncated");
+
+		// Should have paired start and end events
+		const toolStart = events.find(e => e.type === "tool_execution_start") as any;
+		const toolEnd = events.find(e => e.type === "tool_execution_end") as any;
+		expect(toolStart).toBeDefined();
+		expect(toolEnd).toBeDefined();
+
+		// Start args must not include __rawJson
+		expect(toolStart.args).toBeDefined();
+		expect(toolStart.args.__rawJson).toBeUndefined();
+		expect(toolStart.args.__parseError).toBeDefined(); // keeps __parseError for visibility of parse failure
+	});
+
 	it("injects and strips intent when intent tracing is enabled", async () => {
 		const toolSchema = type({ value: "string" });
 		const executedParams: Record<string, unknown>[] = [];
@@ -775,6 +837,47 @@ describe("agentLoop with AgentMessage", () => {
 		expect(assistantEnd).toBeDefined();
 		if (assistantEnd?.message.role !== "assistant") return;
 		expect(assistantEnd.message.stopReason).toBe("aborted");
+		expect(assistantEnd.message.content.some(block => block.type === "toolCall")).toBe(false);
+	});
+
+	it("drops incomplete tool calls on labeled user interrupts", async () => {
+		const context: AgentContext = {
+			systemPrompt: ["You are helpful."],
+			messages: [],
+			tools: [],
+		};
+		const abortController = new AbortController();
+		const mock = createMockModel();
+		const config: AgentLoopConfig = { model: mock.model, convertToLlm: identityConverter };
+
+		const streamFn = () => {
+			const stream = new AssistantMessageEventStream();
+			queueMicrotask(() => {
+				const partial = createAssistantMessage(
+					[{ type: "toolCall", id: "", name: "browser", arguments: {} }],
+					"toolUse",
+				);
+				stream.push({ type: "start", partial });
+				setTimeout(() => {
+					abortController.abort("Interrupted by user");
+					stream.push({ type: "done", reason: "toolUse", message: partial });
+				}, 0);
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([createUserMessage("start")], context, config, abortController.signal, streamFn);
+		for await (const event of stream) events.push(event);
+
+		expect(events.some(event => event.type === "message_end" && event.message.role === "toolResult")).toBe(false);
+		const assistantEnd = events.find(
+			(e): e is Extract<AgentEvent, { type: "message_end" }> =>
+				e.type === "message_end" && e.message.role === "assistant",
+		);
+		expect(assistantEnd?.message.role).toBe("assistant");
+		if (assistantEnd?.message.role !== "assistant") return;
+		expect(assistantEnd.message.errorMessage).toBe("Interrupted by user");
 		expect(assistantEnd.message.content.some(block => block.type === "toolCall")).toBe(false);
 	});
 

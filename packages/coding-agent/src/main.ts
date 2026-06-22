@@ -149,8 +149,16 @@ const RPC_BACKGROUND_DEFAULTED_SETTING_PATHS: SettingPath[] = [
 	"bash.autoBackground.thresholdMs",
 ];
 
+// Protocol-mode hosts opt into a small set of paths whose host-default we
+// re-apply at startup so embedders inherit OMP's neutral defaults instead of
+// the local user's globally-persisted preferences for interactive use. The
+// guard preserves any explicit configuration — caller `Settings.isolated`
+// overrides, project `.claude/settings.yml`, `--config` overlays, or global
+// `config.yml` — so the host default only kicks in when nothing is set. Without
+// it the override clobbers every caller/host choice (#2598, #3207).
 function applyDefaultSettingOverrides(settingPaths: SettingPath[], targetSettings: Settings): void {
 	for (const settingPath of settingPaths) {
+		if (targetSettings.isConfigured(settingPath)) continue;
 		targetSettings.override(settingPath, getDefault(settingPath));
 	}
 }
@@ -1060,11 +1068,11 @@ export async function runRootCommand(
 	}
 
 	// --print-thoughts (single-shot print mode) must surface reasoning, so un-hide
-	// thinking before the session is built — otherwise a passive hideThinkingBlock
+	// thinking before the session is built — otherwise a passive omitThinking
 	// setting makes the provider omit summaries and the flag prints nothing. An
-	// explicit --hide-thinking below still wins.
+	// explicit --hide-thinking block display option still wins for output display.
 	if (parsedArgs.printThoughts && !isProtocolMode && !isInteractive) {
-		settingsInstance.override("hideThinkingBlock", false);
+		settingsInstance.override("omitThinking", false);
 	}
 	// Apply --hide-thinking CLI flag (ephemeral, not persisted)
 	if (parsedArgs.hideThinking) {
@@ -1134,21 +1142,21 @@ export async function runRootCommand(
 	if (parsedArgs.resume === true && !parsedArgs.fork) {
 		const folderSessions = await logger.time("SessionManager.list", SessionManager.list, cwd, parsedArgs.sessionDir);
 		let preloadedAllSessions: SessionInfo[] | undefined;
-		let startInAllScope = false;
 		if (folderSessions.length === 0) {
-			// Nothing in the current folder — fall back to a global scan so the
-			// picker can still open in all-projects scope instead of dead-ending.
+			// Probe globally so we can exit fast when the user has no sessions at
+			// all, but never auto-switch the picker into all-projects scope — that
+			// silently surfaced other projects' history when the cwd was empty
+			// (issue #3099). The preloaded list also makes the user's Tab switch
+			// instant on the way in.
 			preloadedAllSessions = await logger.time("SessionManager.listAll", SessionManager.listAll);
 			if (preloadedAllSessions.length === 0) {
 				writeStartupNotice(parsedArgs, `${chalk.dim("No sessions found")}\n`);
 				return;
 			}
-			startInAllScope = true;
 		}
 		pauseStartupWatchdog();
 		const selected = await logger.time("selectSession", selectSession, folderSessions, {
 			allSessions: preloadedAllSessions,
-			startInAllScope,
 		});
 		resumeStartupWatchdog();
 		if (!selected) {
