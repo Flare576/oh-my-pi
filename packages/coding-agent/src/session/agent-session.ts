@@ -7175,13 +7175,15 @@ export class AgentSession {
 		let modelFailed: string | undefined;
 		let modelApplied = false;
 		// Check per-agent model override from /agents settings — takes precedence
-		// over frontmatter model, matching the behavior for spawned agents.
+		// over frontmatter model. The override is exclusive: if it is present and
+		// fails to resolve/apply, the loop stops and surfaces modelFailed rather
+		// than silently falling through to frontmatter. Matches spawned-agent
+		// behavior in resolveAgentModelPatterns().
 		const agentModelOverrides = this.settings.get("task.agentModelOverrides") as Record<string, string | undefined>;
 		const settingsModelOverride = def?.name ? agentModelOverrides[def.name] : undefined;
-		const effectiveModelList = [
-			...(settingsModelOverride ? [settingsModelOverride] : []),
-			...(def?.model ?? []),
-		];
+		const effectiveModelList = settingsModelOverride
+			? [settingsModelOverride]
+			: (def?.model ?? []);
 		if (effectiveModelList.length && options?.applyModel !== false) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);

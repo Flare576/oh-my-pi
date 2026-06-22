@@ -255,3 +255,74 @@ describe("applyAgentPersona — model behavior", () => {
 		expect(session.model?.id).toBe(originalModelId);
 	});
 });
+describe("applyAgentPersona — /agents override exclusivity", () => {
+	let tempDir: TempDir;
+	let session: AgentSession;
+	const authStorages: AuthStorage[] = [];
+
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@pi-persona-override-");
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		if (session) await session.dispose();
+		for (const as of authStorages.splice(0)) as.close();
+		tempDir.removeSync();
+	});
+
+	async function createSessionWithOverride(agentName: string, overrideModel: string) {
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["global"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated({ "task.agentModelOverrides": { [agentName]: overrideModel } }),
+			modelRegistry,
+		});
+	}
+
+	it("does not fall through to frontmatter when /agents override fails to resolve", async () => {
+		// Override is present but bogus — frontmatter model is real and would succeed.
+		// The override must be treated as exclusive so the fallback never fires silently.
+		await createSessionWithOverride("beta", "nonexistent-provider/nonexistent-model");
+		const originalModelId = session.model?.id;
+		const persona = {
+			...makePersona("beta", "HOW-beta"),
+			// Real model — would resolve if the loop continued past the override.
+			model: ["anthropic/claude-opus-4-5"],
+		};
+
+		const result = await session.applyAgentPersona(persona);
+
+		// Override failed → modelFailed must be set.
+		expect(typeof result.modelFailed).toBe("string");
+		// Persona HOW block still applied.
+		expect(session.activePersonaName).toBe("beta");
+		// Model unchanged — did NOT fall through to the frontmatter candidate.
+		expect(session.model?.id).toBe(originalModelId);
+	});
+
+	it("applies /agents override when it resolves, ignoring frontmatter model", async () => {
+		// Both override and frontmatter are real models; override should win.
+		await createSessionWithOverride("beta", "anthropic/claude-opus-4-5");
+		const persona = {
+			...makePersona("beta", "HOW-beta"),
+			model: ["anthropic/claude-sonnet-4-5"],
+		};
+
+		const result = await session.applyAgentPersona(persona);
+
+		expect(result).toEqual({});
+		// Override model applied, not the frontmatter model.
+		expect(session.model?.id).toBe("claude-opus-4-5");
+	});
+});
+
