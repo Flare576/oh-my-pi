@@ -1593,6 +1593,30 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	"share.store": {
+		type: "enum",
+		values: ["blob", "gist"] as const,
+		default: "blob",
+		ui: {
+			tab: "interaction",
+			group: "Collab",
+			label: "Share Store",
+			description: "Where /share uploads the encrypted session blob",
+			options: [
+				{
+					value: "blob",
+					label: "Encrypted Blob",
+					description: "Upload to the share server (no GitHub account needed; avoids gist API rate limits)",
+				},
+				{
+					value: "gist",
+					label: "GitHub Gist",
+					description: "Push to a secret gist (needs authenticated gh), falling back to the share server",
+				},
+			],
+		},
+	},
+
 	"share.redactSecrets": {
 		type: "boolean",
 		default: true,
@@ -3549,7 +3573,7 @@ export const SETTINGS_SCHEMA = {
 			group: "Discovery & MCP",
 			label: "Essential Tools Override",
 			description:
-				"Override the always-loaded built-in tools (default: read, bash, edit). Leave empty to use defaults.",
+				"Override the always-loaded built-in tools (default: read, bash, edit, write, find, eval). Leave empty to use defaults.",
 		},
 	},
 
@@ -4456,6 +4480,17 @@ export const SETTINGS_SCHEMA = {
 		},
 	},
 
+	"exa.searchDelayMs": {
+		type: "number",
+		default: 1_000,
+		ui: {
+			tab: "providers",
+			group: "Services",
+			label: "Exa Search Delay",
+			description: "Minimum delay between Exa web search requests in milliseconds; set 0 to disable pacing",
+		},
+	},
+
 	"exa.enableResearcher": {
 		type: "boolean",
 		default: false,
@@ -4762,6 +4797,7 @@ export interface TtsrSettings {
 export interface ExaSettings {
 	enabled: boolean;
 	enableSearch: boolean;
+	searchDelayMs: number;
 	enableResearcher: boolean;
 	enableWebsets: boolean;
 }
