@@ -180,7 +180,7 @@ describe("createAgentSession — startup persona loading", () => {
 		// The agent was inferred from a session stamp, so applyModel must be false —
 		// the session's restored model (from branch history) should not be clobbered
 		// by the persona's frontmatter model.
-		expect(spy).toHaveBeenCalledOnce();
+		expect(spy).toHaveBeenCalledTimes(1);
 		expect(spy.mock.calls[0][1]).toMatchObject({ applyModel: false });
 	});
 
@@ -193,7 +193,7 @@ describe("createAgentSession — startup persona loading", () => {
 
 		// Explicit --agent: persona model should be applied (user chose this persona
 		// intentionally, including its configured model).
-		expect(spy).toHaveBeenCalledOnce();
+		expect(spy).toHaveBeenCalledTimes(1);
 		const opts = spy.mock.calls[0][1] as { applyModel?: boolean } | undefined;
 		expect(opts?.applyModel).not.toBe(false);
 	});
@@ -222,7 +222,7 @@ describe("createAgentSession — startup persona loading", () => {
 
 		// recordModelChange must be true: the model_change must be written to history
 		// so that the next resume (applyModel: false) still runs the correct model.
-		expect(spy).toHaveBeenCalledOnce();
+		expect(spy).toHaveBeenCalledTimes(1);
 		expect(spy.mock.calls[0][1]).toMatchObject({ recordModelChange: true });
 	});
 
@@ -238,7 +238,7 @@ describe("createAgentSession — startup persona loading", () => {
 			"beta",
 		);
 
-		expect(spy).toHaveBeenCalledOnce();
+		expect(spy).toHaveBeenCalledTimes(1);
 		expect(spy.mock.calls[0][1]).toMatchObject({ recordModelChange: true });
 	});
 	it("honors explicit-clear null sentinel on startup — does not load first primary", async () => {
