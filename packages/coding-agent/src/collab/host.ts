@@ -46,6 +46,7 @@ const STATE_TRIGGER_EVENTS: Record<string, true> = {
 	message_end: true,
 	tool_execution_end: true,
 	thinking_level_changed: true,
+	persona_changed: true,
 	auto_compaction_end: true,
 };
 
@@ -462,6 +463,7 @@ export class CollabHost {
 			cwd: this.#ctx.sessionManager.getCwd(),
 			model: session.model,
 			thinkingLevel: session.thinkingLevel,
+			activePersonaName: session.activePersonaName,
 			contextUsage: {
 				tokens,
 				contextWindow: breakdown.contextWindow,
