@@ -264,7 +264,7 @@ import {
 	type SecretObfuscator,
 } from "../secrets/obfuscator";
 import { invalidateHostMetadata } from "../ssh/connection-manager";
-import type { AgentDefinition, AgentSource, PersonaStamp } from "../task/types";
+import type { AgentDefinition, AgentSource, PersonaApplyMode, PersonaStamp } from "../task/types";
 import {
 	AUTO_THINKING,
 	type ConfiguredThinkingLevel,
@@ -8049,7 +8049,7 @@ export class AgentSession {
 		this.sessionManager.appendThinkingLevelChange(this.thinkingLevel, this.configuredThinkingLevel());
 		this.sessionManager.appendServiceTierChange(this.#serviceTierEntry());
 		// Record the carry-over model so resume can restore the exact model that
-		// produced turns in this session. applyModel:false keeps the in-memory model
+		// produced turns in this session. mode: "fresh" keeps the in-memory model
 		// intact, but without this entry getRestorableSessionModels returns nothing
 		// and resume defaults to whatever the startup-time model is.
 		const currentModel = this.model;
@@ -8058,10 +8058,10 @@ export class AgentSession {
 		}
 		// Mirror the thinking/serviceTier pattern: apply and record the default persona
 		// for fresh-session semantics (/new is a clean slate — resolves to first primary).
-		// applyModel:false — the model is already set from startup or prior user action.
+		// mode: "fresh" — the model is already set from startup or prior user action.
 		if (this.#resolvePersona) {
 			const def = await this.#resolvePersona(undefined, this.sessionManager.getCwd());
-			await this.applyAgentPersona(def, { recordModelChange: true, applyModel: false });
+			await this.applyAgentPersona(def, { mode: "fresh" });
 		}
 		if (nextDiscoverySessionToolNames) {
 			await this.#applyActiveToolsByName(nextDiscoverySessionToolNames, { persistMCPSelection: false });
@@ -8357,9 +8357,16 @@ export class AgentSession {
 	 */
 	async applyAgentPersona(
 		def: AgentDefinition | null,
-		options?: { recordModelChange?: boolean; applyModel?: boolean },
+		options?: { mode?: PersonaApplyMode },
 	): Promise<{ modelFailed?: string }> {
-		logger.debug("applyAgentPersona called", { name: def?.name ?? null });
+		const mode = options?.mode ?? "cycle";
+		// "restore" is silent: no model change, no thinking-level change, no history
+		// recording. "fresh" records the persona change but leaves the current model
+		// untouched (matches historic {recordModelChange:true, applyModel:false}).
+		// Only "cycle" (Tab / explicit --agent) actually swaps the model.
+		const applyModel = mode === "cycle";
+		const record = mode !== "restore";
+		logger.debug("applyAgentPersona called", { name: def?.name ?? null, mode });
 		// Apply the model before mutating visible persona state. Failure is returned
 		// as { modelFailed } so callers that show UI can surface a visible warning;
 		// the persona prompt/state still applies so users get the HOW block even if
@@ -8374,7 +8381,7 @@ export class AgentSession {
 		const agentModelOverrides = this.settings.get("task.agentModelOverrides") as Record<string, string | undefined>;
 		const settingsModelOverride = def?.name ? agentModelOverrides[def.name] : undefined;
 		const effectiveModelList = settingsModelOverride ? [settingsModelOverride] : (def?.model ?? []);
-		if (effectiveModelList.length && options?.applyModel !== false) {
+		if (effectiveModelList.length && applyModel) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
 			for (const modelStr of effectiveModelList) {
@@ -8391,7 +8398,7 @@ export class AgentSession {
 								thinkingLevel: resolved.thinkingLevel,
 								explicitThinkingLevel: resolved.explicitThinkingLevel,
 							},
-							{ record: options?.recordModelChange ?? true },
+							{ record },
 						);
 						modelApplied = true;
 						break; // success — stop trying further candidates
@@ -8419,8 +8426,8 @@ export class AgentSession {
 		// user-initiated action. The model-selector suffix (:high) already handled
 		// thinking via applyRoleModel; this covers the case where the persona sets
 		// thinking without specifying a model string suffix.
-		if (def?.thinkingLevel !== undefined && options?.applyModel !== false && options?.recordModelChange !== false) {
-			this.setThinkingLevel(def.thinkingLevel, false, options?.recordModelChange ?? true);
+		if (def?.thinkingLevel !== undefined && mode === "cycle") {
+			this.setThinkingLevel(def.thinkingLevel, false, record);
 		}
 		this.#activePersona = def;
 		this.#personaBlock = def?.systemPrompt ?? null;
@@ -8429,14 +8436,14 @@ export class AgentSession {
 		this.agent.setSystemPrompt(this.#baseSystemPrompt);
 		// Record the persona switch so getLastAgentName() can recover it on resume
 		// even when the user switched and exited before sending any message.
-		// Only for user-initiated actions (recordModelChange: true); restore paths
+		// Only for user-initiated actions (mode !== "restore"); restore paths
 		// already have the correct entry in history.
 		// Record the persona switch so getLastAgentName() can recover it on resume
 		// even when the user switched and exited before sending any message.
 		// For explicit clears (def === null), write a null sentinel so a stale
 		// persona_change from a prior switch doesn't survive to the next resume.
-		// Only for user-initiated actions (recordModelChange !== false).
-		if (options?.recordModelChange !== false) {
+		// Only for user-initiated actions (mode !== "restore", i.e. `record`).
+		if (record) {
 			this.sessionManager.appendPersonaChange(def?.name ?? null);
 		}
 		this.#emitPersonaChangedEvent(def);
@@ -13815,10 +13822,7 @@ export class AgentSession {
 				// by the TUI layer is guarded the same way and will skip the second reload.
 				await this.settings.reloadForCwd(cwd);
 				const def = await this.#resolvePersona(name, cwd);
-				const { modelFailed } = await this.applyAgentPersona(def, {
-					recordModelChange: false,
-					applyModel: false,
-				});
+				const { modelFailed } = await this.applyAgentPersona(def, { mode: "restore" });
 				if (modelFailed && def) this.#emitPersonaModelWarn(def);
 			}
 
@@ -14080,10 +14084,7 @@ export class AgentSession {
 		const name = this.sessionManager.getLastAgentName();
 		const cwd = this.sessionManager.getCwd();
 		const def = await this.#resolvePersona(name, cwd);
-		const { modelFailed } = await this.applyAgentPersona(def, {
-			recordModelChange: false,
-			applyModel: false,
-		});
+		const { modelFailed } = await this.applyAgentPersona(def, { mode: "restore" });
 		if (modelFailed && def) this.#emitPersonaModelWarn(def);
 	}
 

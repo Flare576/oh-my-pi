@@ -318,6 +318,17 @@ export interface ReviewData {
  */
 export type PersonaStamp = string | null | undefined;
 
+/**
+ * How `AgentSession#applyAgentPersona` should apply a persona:
+ * - `"cycle"` — user-initiated Tab cycle / explicit `--agent` startup: apply model,
+ *   apply frontmatter thinking level (unless a model selector already set one explicitly),
+ *   and record the change for resume.
+ * - `"fresh"` — `/new` session: record the persona change but leave the current model alone.
+ * - `"restore"` — silent restoration (switchSession, branch navigation): no model change,
+ *   no thinking-level change, no history recording.
+ */
+export type PersonaApplyMode = "cycle" | "fresh" | "restore";
+
 /** Agent definition (bundled or discovered) */
 export interface AgentDefinition {
 	name: string;

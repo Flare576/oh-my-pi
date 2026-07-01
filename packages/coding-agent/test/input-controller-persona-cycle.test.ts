@@ -133,7 +133,10 @@ describe("InputController.cyclePersona", () => {
 		await controller.cyclePersona(1);
 
 		expect(applyAgentPersona).toHaveBeenCalledTimes(1);
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }));
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "alpha" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
 	});
 
 	it("advances to the next primary agent from the current persona", async () => {
@@ -148,7 +151,10 @@ describe("InputController.cyclePersona", () => {
 
 		await controller.cyclePersona(1);
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "beta" }));
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "beta" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
 	});
 
 	it("forward Tab wraps from the last agent back to the first", async () => {
@@ -163,7 +169,10 @@ describe("InputController.cyclePersona", () => {
 
 		await controller.cyclePersona(1);
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }));
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "alpha" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
 	});
 
 	it("first Shift+Tab (no persona) loads the last primary agent — I4 contract", async () => {
@@ -177,7 +186,10 @@ describe("InputController.cyclePersona", () => {
 
 		await controller.cyclePersona(-1);
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "gamma" }));
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "gamma" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
 	});
 
 	it("backward Shift+Tab wraps from the first agent to the last", async () => {
@@ -192,7 +204,10 @@ describe("InputController.cyclePersona", () => {
 
 		await controller.cyclePersona(-1);
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "gamma" }));
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "gamma" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
 	});
 
 	it("excludes subagent-mode agents from the cycle", async () => {
@@ -206,7 +221,10 @@ describe("InputController.cyclePersona", () => {
 
 		await controller.cyclePersona(1);
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "solo" }));
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "solo" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
 		expect(applyAgentPersona).not.toHaveBeenCalledWith(expect.objectContaining({ name: "worker" }));
 	});
 
@@ -238,7 +256,10 @@ describe("InputController.cyclePersona", () => {
 
 		await controller.cyclePersona(1);
 
-		expect(applyAgentPersona).toHaveBeenCalledWith(expect.objectContaining({ name: "alpha" }));
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "alpha" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
 	});
 
 	it("in-flight guard drops a concurrent second call — I1 contract", async () => {

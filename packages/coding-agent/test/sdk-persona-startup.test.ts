@@ -168,7 +168,7 @@ describe("createAgentSession — startup persona loading", () => {
 		expect(newEntries.filter(e => e.type === "thinking_level_change")).toHaveLength(0);
 	});
 
-	it("stamp-restore startup passes applyModel: false, preserving the session's restored model", async () => {
+	it("stamp-restore startup passes mode: 'restore', preserving the session's restored model", async () => {
 		const sm = SessionManager.inMemory();
 		// Stamp session as if a previous run applied "alpha"
 		sm.appendMessage(userMsg(), "alpha");
@@ -177,14 +177,14 @@ describe("createAgentSession — startup persona loading", () => {
 
 		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"])]);
 
-		// The agent was inferred from a session stamp, so applyModel must be false —
+		// The agent was inferred from a session stamp, so mode must be "restore" —
 		// the session's restored model (from branch history) should not be clobbered
 		// by the persona's frontmatter model.
 		expect(spy).toHaveBeenCalledTimes(1);
-		expect(spy.mock.calls[0][1]).toMatchObject({ applyModel: false });
+		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "restore" });
 	});
 
-	it("explicit --agent startup passes applyModel: true, applying the persona model", async () => {
+	it("explicit --agent startup passes mode: 'cycle', applying the persona model", async () => {
 		const sm = SessionManager.inMemory();
 
 		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
@@ -194,8 +194,8 @@ describe("createAgentSession — startup persona loading", () => {
 		// Explicit --agent: persona model should be applied (user chose this persona
 		// intentionally, including its configured model).
 		expect(spy).toHaveBeenCalledTimes(1);
-		const opts = spy.mock.calls[0][1] as { applyModel?: boolean } | undefined;
-		expect(opts?.applyModel).not.toBe(false);
+		const opts = spy.mock.calls[0][1] as { mode?: string } | undefined;
+		expect(opts?.mode).toBe("cycle");
 	});
 
 	it("invalid --agent does not fall through to session stamp", async () => {
@@ -214,19 +214,19 @@ describe("createAgentSession — startup persona loading", () => {
 		expect(session.activePersonaName).toBe("alpha");
 	});
 
-	it("fresh startup passes recordModelChange: true so persona model survives next resume", async () => {
+	it("startup with no session stamp passes mode: 'cycle' so persona model survives next resume", async () => {
 		const sm = SessionManager.inMemory(); // no stamp — genuinely fresh
 		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
 
 		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"])]);
 
-		// recordModelChange must be true: the model_change must be written to history
-		// so that the next resume (applyModel: false) still runs the correct model.
+		// mode must be "cycle": the model_change must be written to history so that
+		// the next resume (mode: "restore") still runs the correct model.
 		expect(spy).toHaveBeenCalledTimes(1);
-		expect(spy.mock.calls[0][1]).toMatchObject({ recordModelChange: true });
+		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "cycle" });
 	});
 
-	it("explicit --agent startup passes recordModelChange: true", async () => {
+	it("explicit --agent startup passes mode: 'cycle'", async () => {
 		const sm = SessionManager.inMemory();
 		sm.appendMessage(userMsg(), "alpha");
 		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
@@ -239,7 +239,7 @@ describe("createAgentSession — startup persona loading", () => {
 		);
 
 		expect(spy).toHaveBeenCalledTimes(1);
-		expect(spy.mock.calls[0][1]).toMatchObject({ recordModelChange: true });
+		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "cycle" });
 	});
 	it("honors explicit-clear null sentinel on startup — does not load first primary", async () => {
 		const sm = SessionManager.inMemory();

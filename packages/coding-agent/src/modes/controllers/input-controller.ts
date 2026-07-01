@@ -1757,7 +1757,7 @@ export class InputController {
 			const next = primary[nextIdx];
 			const safeName = sanitizeStatusText(next.name);
 			logger.debug("cyclePersona switching", { from: currentName, to: next.name });
-			const { modelFailed } = await this.ctx.session.applyAgentPersona(next);
+			const { modelFailed } = await this.ctx.session.applyAgentPersona(next, { mode: "cycle" });
 			if (modelFailed) {
 				this.ctx.showStatus(`Persona: ${safeName} (model not available — using current)`);
 			} else {

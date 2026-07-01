@@ -215,23 +215,26 @@ describe("applyAgentPersona — model behavior", () => {
 		expect(modelEntries.length).toBeGreaterThan(0);
 	});
 
-	it("does NOT record model_change when recordModelChange: false", async () => {
+	it("does NOT record model_change in restore mode (silent restoration)", async () => {
 		await createSession();
+		const originalModelId = session.model?.id;
 		const persona = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-sonnet-4-5"] };
 
-		await session.applyAgentPersona(persona, { recordModelChange: false });
+		await session.applyAgentPersona(persona, { mode: "restore" });
 
+		expect(session.model?.id).toBe(originalModelId);
 		const branch = session.sessionManager.getBranch();
 		const modelEntries = branch.filter(e => e.type === "model_change");
 		expect(modelEntries).toHaveLength(0);
 	});
 
-	it("does NOT record thinking_level_change when recordModelChange: false and persona has explicit thinking", async () => {
+	it("does NOT record thinking_level_change in restore mode", async () => {
 		await createSession();
-		// :high gives explicitThinkingLevel: true; initial session level is Effort.Low so it IS changing
+		// :high gives explicitThinkingLevel: true; initial session level is Effort.Low so it
+		// WOULD change under "cycle" mode — "restore" must leave it untouched and unrecorded.
 		const persona = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-sonnet-4-5:high"] };
 
-		await session.applyAgentPersona(persona, { recordModelChange: false });
+		await session.applyAgentPersona(persona, { mode: "restore" });
 
 		const branch = session.sessionManager.getBranch();
 		const thinkingEntries = branch.filter(e => e.type === "thinking_level_change");

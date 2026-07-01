@@ -2803,11 +2803,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				// Stamp-restore skips model application (session model already
 				// correct from history); fresh startup and explicit --agent apply
 				// the persona model AND record the change so the next resume's
-				// applyModel:false path still runs the right model.
+				// mode: "restore" path still runs the right model.
 				const applyModel = startAgent !== sessionAgent;
 				const { modelFailed } = await session.applyAgentPersona(startAgent, {
-					recordModelChange: applyModel,
-					applyModel,
+					mode: applyModel ? "cycle" : "restore",
 				});
 				if (modelFailed) {
 					logger.warn(`--agent: persona "${startAgent.name}" model not available — using current model`, {
