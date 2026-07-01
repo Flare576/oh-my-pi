@@ -310,6 +310,14 @@ export interface ReviewData {
 	summary?: ReviewSummary;
 }
 
+/**
+ * Persisted persona-selection stamp, as returned by `SessionManager.getLastAgentName()`.
+ * - `string` — a named persona is active
+ * - `null` — an explicit persona clear was recorded (null sentinel)
+ * - `undefined` — no persona entry found (session has never selected one)
+ */
+export type PersonaStamp = string | null | undefined;
+
 /** Agent definition (bundled or discovered) */
 export interface AgentDefinition {
 	name: string;

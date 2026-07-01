@@ -264,7 +264,7 @@ import {
 	type SecretObfuscator,
 } from "../secrets/obfuscator";
 import { invalidateHostMetadata } from "../ssh/connection-manager";
-import type { AgentDefinition, AgentSource } from "../task/types";
+import type { AgentDefinition, AgentSource, PersonaStamp } from "../task/types";
 import {
 	AUTO_THINKING,
 	type ConfiguredThinkingLevel,
@@ -666,7 +666,7 @@ export interface AgentSessionConfig {
 	 * When absent, switchSession() leaves the active persona unchanged — callers must
 	 * handle restoration themselves or accept the stale persona.
 	 */
-	resolvePersona?: (name: string | null | undefined, cwd: string) => Promise<AgentDefinition | null>;
+	resolvePersona?: (name: PersonaStamp, cwd: string) => Promise<AgentDefinition | null>;
 	/**
 	 * Strip tool descriptions from provider-bound tool specs on side requests
 	 * (handoff). Must match the session-start value used to build the system
@@ -1491,7 +1491,7 @@ export class AgentSession {
 	#toolRegistry: Map<string, AgentTool>;
 	#transformContext: (messages: AgentMessage[], signal?: AbortSignal) => AgentMessage[] | Promise<AgentMessage[]>;
 	#onPayload: SimpleStreamOptions["onPayload"] | undefined;
-	#resolvePersona: ((name: string | null | undefined, cwd: string) => Promise<AgentDefinition | null>) | undefined;
+	#resolvePersona: ((name: PersonaStamp, cwd: string) => Promise<AgentDefinition | null>) | undefined;
 	#onResponse: SimpleStreamOptions["onResponse"] | undefined;
 	#onSseEvent: SimpleStreamOptions["onSseEvent"] | undefined;
 	#transformProviderContext: ((context: Context, model: Model) => Context | Promise<Context>) | undefined;

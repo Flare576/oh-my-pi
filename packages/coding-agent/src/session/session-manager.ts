@@ -17,6 +17,7 @@ import {
 	logger,
 	toError,
 } from "@oh-my-pi/pi-utils";
+import type { PersonaStamp } from "../task/types";
 import { ArtifactManager } from "./artifacts";
 import { type BlobPutOptions, type BlobPutResult, BlobStore } from "./blob-store";
 import {
@@ -1481,7 +1482,7 @@ export class SessionManager {
 	 * - `string` — a named persona is active
 	 * - `null`   — an explicit persona clear was recorded (null sentinel)
 	 * - `undefined` — no persona entry found (session has never selected one) */
-	getLastAgentName(): string | null | undefined {
+	getLastAgentName(): PersonaStamp {
 		const branch = this.getBranch();
 		for (let index = branch.length - 1; index >= 0; index--) {
 			const entry = branch[index];
