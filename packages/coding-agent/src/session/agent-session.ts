@@ -13688,6 +13688,7 @@ export class AgentSession {
 		const previousSelectedMCPToolNames = new Set(this.#selectedMCPToolNames);
 		const previousTools = [...this.agent.state.tools];
 		const previousBaseSystemPrompt = this.#baseSystemPrompt;
+		const previousGlobalBlocks = [...this.#globalBlocks];
 		const previousSystemPrompt = this.agent.state.systemPrompt;
 		const previousBaseSystemPromptBeforeMemoryPromotion = this.#baseSystemPromptBeforeMemoryPromotion;
 		const previousFreshProviderSessionId = this.#freshProviderSessionId;
@@ -13869,6 +13870,7 @@ export class AgentSession {
 				this.agent.setSystemPrompt(previousSystemPrompt);
 			}
 			this.#baseSystemPrompt = previousBaseSystemPrompt;
+			this.#globalBlocks = previousGlobalBlocks;
 			this.#baseSystemPromptBeforeMemoryPromotion = previousBaseSystemPromptBeforeMemoryPromotion;
 			this.agent.setSystemPrompt(previousSystemPrompt);
 			this.agent.replaceMessages(previousAgentMessages);
