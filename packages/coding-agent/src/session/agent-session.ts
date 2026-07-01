@@ -1510,6 +1510,12 @@ export class AgentSession {
 	#globalBlocks: string[];
 	#personaBlock: string | null;
 	#activePersona: AgentDefinition | null;
+	/**
+	 * Persona name mirrored from a collab host onto this guest replica session,
+	 * overriding `#activePersona` for display purposes only. `undefined` means
+	 * "not a replica / no override"; `null` means the host has no active persona.
+	 */
+	#replicaPersonaName: string | null | undefined = undefined;
 	#baseSystemPromptBeforeMemoryPromotion: string[] | undefined;
 	/**
 	 * Signature of the (toolNames, tool descriptions) tuple passed to the most
@@ -5313,7 +5319,19 @@ export class AgentSession {
 
 	/** Name of the active persona agent, or null when no persona is loaded. */
 	get activePersonaName(): string | null {
+		if (this.#replicaPersonaName !== undefined) return this.#replicaPersonaName;
 		return this.#activePersona?.name ?? null;
+	}
+
+	/**
+	 * Sets the display-facing persona name mirrored from a collab host onto this
+	 * guest replica session. Pure display-state mutation — unlike
+	 * `applyAgentPersona()`, this never touches the system prompt or model,
+	 * matching how collab guests apply host model/thinkingLevel directly onto
+	 * agent state without replaying persona side effects.
+	 */
+	setReplicaPersonaName(name: string | null): void {
+		this.#replicaPersonaName = name;
 	}
 
 	/** Current model (may be undefined if not yet selected) */
