@@ -8450,6 +8450,11 @@ export class AgentSession {
 		this.#emit({ type: "persona_changed", personaName: def?.name ?? null, source: def?.source });
 	}
 
+	#emitPersonaModelWarn(def: AgentDefinition): void {
+		const safeName = sanitizeStatusText(def.name);
+		this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
+	}
+
 	/**
 	 * Cycle through configured role models in a fixed order.
 	 * Skips missing roles and changes only the active session model.
@@ -13814,10 +13819,7 @@ export class AgentSession {
 					recordModelChange: false,
 					applyModel: false,
 				});
-				if (modelFailed && def) {
-					const safeName = sanitizeStatusText(def.name);
-					this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
-				}
+				if (modelFailed && def) this.#emitPersonaModelWarn(def);
 			}
 
 			this.#reconnectToAgent();
@@ -14082,10 +14084,7 @@ export class AgentSession {
 			recordModelChange: false,
 			applyModel: false,
 		});
-		if (modelFailed && def) {
-			const safeName = sanitizeStatusText(def.name);
-			this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
-		}
+		if (modelFailed && def) this.#emitPersonaModelWarn(def);
 	}
 
 	async navigateTree(
