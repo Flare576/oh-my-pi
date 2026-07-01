@@ -238,6 +238,8 @@ export interface SessionState {
 	cwd: string;
 	model?: WireModel;
 	thinkingLevel?: string;
+	/** Host's active persona name, or null when no persona is loaded. Mirrored onto guest replicas. */
+	activePersonaName?: string | null;
 	contextUsage?: ContextUsage;
 	participants: Participant[];
 	isAborting?: boolean;
