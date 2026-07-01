@@ -47,6 +47,7 @@ import { Settings, type SkillsSettings } from "./config/settings";
 import { CursorExecHandlers } from "./cursor";
 import "./discovery";
 import { initializeWithSettings } from "./discovery";
+import { getPrimaryAgents } from "./discovery/helpers";
 import { disposeAllJuliaKernelSessions, disposeJuliaKernelSessionsByOwner } from "./eval/jl/executor";
 import { disposeAllKernelSessions, disposeKernelSessionsByOwner } from "./eval/py/executor";
 import { disposeAllRubyKernelSessions, disposeRubyKernelSessionsByOwner } from "./eval/rb/executor";
@@ -2757,9 +2758,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				if (name === null) return null;
 				const { agents } = await discoverAgents(cwd);
 				const disabled = settings.get("task.disabledAgents") as string[];
-				const primary = agents
-					.filter(a => a.mode === "primary" && !disabled.includes(a.name))
-					.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
+				const primary = getPrimaryAgents(agents, disabled);
 				if (!primary.length) return null;
 				return name ? (primary.find(a => a.name.toLowerCase() === name.toLowerCase()) ?? primary[0]) : primary[0];
 			},
@@ -2769,9 +2768,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		if (taskDepth === 0) {
 			const { agents: discoveredAgentsForPersona } = await discoverAgents(cwd);
 			const disabledAgents = settings.get("task.disabledAgents") as string[];
-			const primaryAgents = discoveredAgentsForPersona
-				.filter(a => a.mode === "primary" && !disabledAgents.includes(a.name))
-				.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
+			const primaryAgents = getPrimaryAgents(discoveredAgentsForPersona, disabledAgents);
 			// Resolve --agent against primary agents only (case-insensitive).
 			// Non-primary/subagent definitions are spawn-only; loading one as the
 			// top-level persona would bypass the mode: "primary" opt-in contract.

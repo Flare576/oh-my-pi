@@ -17,6 +17,7 @@ import { invalidate as invalidateFsCache, readDirEntries, readFile } from "../ca
 import { parseRuleConditionAndScope, type Rule, type RuleFrontmatter } from "../capability/rule";
 import type { Skill, SkillFrontmatter } from "../capability/skill";
 import type { LoadContext, LoadResult, SourceMeta } from "../capability/types";
+import type { AgentDefinition } from "../task/types";
 import { parseThinkingLevel } from "../thinking";
 import { normalizeToolNames } from "../tools/builtin-names";
 
@@ -309,6 +310,17 @@ export function parseAgentFields(frontmatter: Record<string, unknown>): ParsedAg
 		mode,
 		order,
 	};
+}
+
+/**
+ * Filter agents down to Tab-cycle-eligible primaries (mode "primary", not disabled)
+ * and sort them into stable rotation order: `order` ascending (undefined last), then
+ * name alphabetically as a tiebreaker.
+ */
+export function getPrimaryAgents(agents: AgentDefinition[], disabledAgents: string[]): AgentDefinition[] {
+	return agents
+		.filter(a => a.mode === "primary" && !disabledAgents.includes(a.name))
+		.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
 }
 
 async function globIf(
