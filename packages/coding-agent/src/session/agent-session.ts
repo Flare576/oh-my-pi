@@ -8373,6 +8373,7 @@ export class AgentSession {
 		// their model config is incomplete.
 		let modelFailed: string | undefined;
 		let modelApplied = false;
+		let modelSetExplicitThinking = false;
 		// Check per-agent model override from /agents settings — takes precedence
 		// over frontmatter model. The override is exclusive: if it is present and
 		// fails to resolve/apply, the loop stops and surfaces modelFailed rather
@@ -8401,6 +8402,7 @@ export class AgentSession {
 							{ record },
 						);
 						modelApplied = true;
+						modelSetExplicitThinking = resolved.explicitThinkingLevel === true;
 						break; // success — stop trying further candidates
 					} catch (err) {
 						// Auth failure or other error — log and try the next candidate.
@@ -8425,8 +8427,10 @@ export class AgentSession {
 		// Apply top-level thinking level from frontmatter if set and this is a
 		// user-initiated action. The model-selector suffix (:high) already handled
 		// thinking via applyRoleModel; this covers the case where the persona sets
-		// thinking without specifying a model string suffix.
-		if (def?.thinkingLevel !== undefined && mode === "cycle") {
+		// thinking without specifying a model string suffix. Skipped when the model
+		// selector already set an explicit thinking level — frontmatter must not
+		// clobber a user's `:high`-style override.
+		if (def?.thinkingLevel !== undefined && mode === "cycle" && !modelSetExplicitThinking) {
 			this.setThinkingLevel(def.thinkingLevel, false, record);
 		}
 		this.#activePersona = def;
