@@ -150,6 +150,10 @@ export class InputController {
 	#focusedLeftTapListenerInstalled = false;
 	#btwBranchListenerInstalled = false;
 	#personaCycleInFlight = false;
+	// Eagerly primed (fire-and-forget) so the FIRST Tab press after startup/persona
+	// discovery already knows whether any primary agents exist, instead of only
+	// learning it after a throwaway cyclePersona() call. Kept in sync by cyclePersona().
+	#hasPrimaryAgents = false;
 	#btwCopyListenerInstalled = false;
 	// Tap counter for the double-← gesture; reset whenever a quiet gap
 	// (>= LEFT_DOUBLE_TAP_MAX_GAP_MS) starts a fresh sequence. See
@@ -429,7 +433,7 @@ export class InputController {
 			// Return false when no persona is active so the editor falls through to
 			// its built-in tab-completion path (file/slash completions) rather than
 			// silently consuming the Tab key.
-			if (!this.#personaCycleInFlight && !this.ctx.session.activePersonaName) return false;
+			if (!this.#personaCycleInFlight && !this.#hasPrimaryAgents) return false;
 			this.cyclePersona(1).catch(err => logger.error("cyclePersona(1) failed", { err: String(err) }));
 		};
 		this.ctx.editor.setActionKeys(
@@ -437,9 +441,16 @@ export class InputController {
 			this.ctx.keybindings.getKeys("app.persona.cycleBackward"),
 		);
 		this.ctx.editor.onCyclePersonaBackward = (): false | undefined => {
-			if (!this.#personaCycleInFlight && !this.ctx.session.activePersonaName) return false;
+			if (!this.#personaCycleInFlight && !this.#hasPrimaryAgents) return false;
 			this.cyclePersona(-1).catch(err => logger.error("cyclePersona(-1) failed", { err: String(err) }));
 		};
+		// Eagerly discover whether any primary agents exist so the first Tab press
+		// works immediately instead of relying on a throwaway cyclePersona() call.
+		(async () => {
+			const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
+			const disabledAgents = this.ctx.session.settings.get("task.disabledAgents") as string[];
+			this.#hasPrimaryAgents = getPrimaryAgents(agents, disabledAgents).length > 0;
+		})().catch(err => logger.error("persona primary-agent discovery failed", { err: String(err) }));
 		this.ctx.editor.setActionKeys("app.model.cycleForward", this.ctx.keybindings.getKeys("app.model.cycleForward"));
 		this.ctx.editor.onCycleModelForward = () => this.cycleRoleModel("forward");
 		this.ctx.editor.setActionKeys("app.model.cycleBackward", this.ctx.keybindings.getKeys("app.model.cycleBackward"));
@@ -1731,6 +1742,7 @@ export class InputController {
 			const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
 			const disabledAgents = this.ctx.session.settings.get("task.disabledAgents") as string[];
 			const primary = getPrimaryAgents(agents, disabledAgents);
+			this.#hasPrimaryAgents = primary.length > 0;
 			logger.debug("cyclePersona agents found", {
 				total: agents.length,
 				primary: primary.length,
