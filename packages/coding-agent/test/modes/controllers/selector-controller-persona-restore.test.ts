@@ -30,7 +30,10 @@ function createHandle(opts?: { newCwd?: string }) {
 		clearTransientSessionUi: vi.fn(),
 		session: {
 			switchSession,
-			settings: { get: (key: string) => (key === "task.disabledAgents" ? [] : key === "task.agentModelOverrides" ? {} : undefined) },
+			settings: {
+				get: (key: string) =>
+					key === "task.disabledAgents" ? [] : key === "task.agentModelOverrides" ? {} : undefined,
+			},
 		},
 		sessionManager: {
 			getCwd: vi.fn().mockReturnValueOnce(cwd).mockReturnValue(newCwd),

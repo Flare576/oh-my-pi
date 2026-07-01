@@ -8372,9 +8372,7 @@ export class AgentSession {
 		// behavior in resolveAgentModelPatterns().
 		const agentModelOverrides = this.settings.get("task.agentModelOverrides") as Record<string, string | undefined>;
 		const settingsModelOverride = def?.name ? agentModelOverrides[def.name] : undefined;
-		const effectiveModelList = settingsModelOverride
-			? [settingsModelOverride]
-			: (def?.model ?? []);
+		const effectiveModelList = settingsModelOverride ? [settingsModelOverride] : (def?.model ?? []);
 		if (effectiveModelList.length && options?.applyModel !== false) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
@@ -8382,30 +8380,29 @@ export class AgentSession {
 				const resolved = resolveModelRoleValue(modelStr, availableModels, {
 					settings: this.settings,
 					matchPreferences,
-					modelRegistry: this.#modelRegistry,
 				});
-			if (resolved.model) {
-				try {
-					await this.applyRoleModel(
-						{
-							role: "persona",
-							model: resolved.model,
-							thinkingLevel: resolved.thinkingLevel,
-							explicitThinkingLevel: resolved.explicitThinkingLevel,
-						},
-						{ record: options?.recordModelChange ?? true },
-					);
-					modelApplied = true;
-					break; // success — stop trying further candidates
-				} catch (err) {
-					// Auth failure or other error — log and try the next candidate.
-					modelFailed = String(err);
-					logger.warn("applyAgentPersona: model swap failed, trying next candidate", {
-						model: modelStr,
-						err: modelFailed,
-					});
+				if (resolved.model) {
+					try {
+						await this.applyRoleModel(
+							{
+								role: "persona",
+								model: resolved.model,
+								thinkingLevel: resolved.thinkingLevel,
+								explicitThinkingLevel: resolved.explicitThinkingLevel,
+							},
+							{ record: options?.recordModelChange ?? true },
+						);
+						modelApplied = true;
+						break; // success — stop trying further candidates
+					} catch (err) {
+						// Auth failure or other error — log and try the next candidate.
+						modelFailed = String(err);
+						logger.warn("applyAgentPersona: model swap failed, trying next candidate", {
+							model: modelStr,
+							err: modelFailed,
+						});
+					}
 				}
-			}
 			}
 			// All model strings iterated without a resolvable match — report failure so
 			// callers (startup, resume, Tab cycle) can surface a visible warning instead
@@ -8576,7 +8573,11 @@ export class AgentSession {
 	 * persisted when real user turns are classified so resumed sessions keep the
 	 * last resolved effort instead of reverting to pending auto.
 	 */
-	setThinkingLevel(level: ConfiguredThinkingLevel | undefined, persist: boolean = false, record: boolean = true): void {
+	setThinkingLevel(
+		level: ConfiguredThinkingLevel | undefined,
+		persist: boolean = false,
+		record: boolean = true,
+	): void {
 		if (level === AUTO_THINKING) {
 			const provisional = resolveProvisionalAutoLevel(this.model);
 			const wasAuto = this.#autoThinking;
@@ -8622,7 +8623,11 @@ export class AgentSession {
 	 * preferred default or the current effective level.
 	 */
 	#reapplyThinkingLevel(preferredDefault?: ThinkingLevel, record: boolean = true): void {
-		this.setThinkingLevel(this.#autoThinking ? AUTO_THINKING : (preferredDefault ?? this.#thinkingLevel), false, record);
+		this.setThinkingLevel(
+			this.#autoThinking ? AUTO_THINKING : (preferredDefault ?? this.#thinkingLevel),
+			false,
+			record,
+		);
 	}
 
 	/**
@@ -13809,7 +13814,10 @@ export class AgentSession {
 					applyModel: false,
 				});
 				if (modelFailed && def) {
-					const safeName = def.name.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/ +/g, " ").trim();
+					const safeName = def.name
+						.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
+						.replace(/ +/g, " ")
+						.trim();
 					this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
 				}
 			}
@@ -14018,7 +14026,10 @@ export class AgentSession {
 			{ role: "user", content: [{ type: "text", text: question }], timestamp: Date.now() },
 			this.activePersonaName ?? undefined,
 		);
-		this.sessionManager.appendMessage(sanitizeAssistantForReparentedHistory(assistantMessage), this.activePersonaName ?? undefined);
+		this.sessionManager.appendMessage(
+			sanitizeAssistantForReparentedHistory(assistantMessage),
+			this.activePersonaName ?? undefined,
+		);
 		this.#syncTodoPhasesFromBranch();
 		this.#freshProviderSessionId = undefined;
 		this.#syncAgentSessionId();
@@ -14074,7 +14085,10 @@ export class AgentSession {
 			applyModel: false,
 		});
 		if (modelFailed && def) {
-			const safeName = def.name.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/ +/g, " ").trim();
+			const safeName = def.name
+				.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
+				.replace(/ +/g, " ")
+				.trim();
 			this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
 		}
 	}

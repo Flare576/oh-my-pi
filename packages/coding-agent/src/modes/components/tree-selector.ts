@@ -17,8 +17,8 @@ import { matchesAppInterrupt, matchesSelectDown, matchesSelectUp } from "../../m
 import type { SessionTreeNode } from "../../session/session-entries";
 import { toPathList } from "../../tools/grep";
 import { shortenPath } from "../../tools/render-utils";
-import { sanitizeStatusText } from "../shared";
 import { canonicalizeMessage } from "../../utils/thinking-display";
+import { sanitizeStatusText } from "../shared";
 import { DynamicBorder } from "./dynamic-border";
 import { centeredWindow, contentRowWidth, renderScrollableList } from "./selector-helpers";
 

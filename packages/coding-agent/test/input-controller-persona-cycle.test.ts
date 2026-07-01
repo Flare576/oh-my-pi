@@ -72,7 +72,10 @@ function createContext() {
 			extensionRunner: undefined,
 			prompt: vi.fn(async () => {}),
 			abort: vi.fn(async () => {}),
-			settings: { get: (key: string) => (key === "task.disabledAgents" ? [] : key === "task.agentModelOverrides" ? {} : undefined) },
+			settings: {
+				get: (key: string) =>
+					key === "task.disabledAgents" ? [] : key === "task.agentModelOverrides" ? {} : undefined,
+			},
 		} as unknown as InteractiveModeContext["session"],
 		sessionManager: {
 			getCwd: () => "/tmp/test-cwd",

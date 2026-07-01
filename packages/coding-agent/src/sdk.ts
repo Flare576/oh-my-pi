@@ -2760,9 +2760,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					.filter(a => a.mode === "primary" && !disabled.includes(a.name))
 					.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.name.localeCompare(b.name));
 				if (!primary.length) return null;
-				return name
-					? (primary.find(a => a.name.toLowerCase() === name.toLowerCase()) ?? primary[0])
-					: primary[0];
+				return name ? (primary.find(a => a.name.toLowerCase() === name.toLowerCase()) ?? primary[0]) : primary[0];
 			},
 		});
 		hasSession = true;
@@ -2793,9 +2791,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const lastAgentName = session.sessionManager.getLastAgentName();
 			const sessionAgent =
 				options.initialAgentName === undefined && lastAgentName !== null
-					? (primaryAgents.find(
-							a => a.name.toLowerCase() === (lastAgentName ?? "").toLowerCase(),
-						) ?? null)
+					? (primaryAgents.find(a => a.name.toLowerCase() === (lastAgentName ?? "").toLowerCase()) ?? null)
 					: null;
 			// When the explicit-clear sentinel (null) is present and no --agent flag
 			// overrides it, don't fall through to primaryAgents[0] — matches the
@@ -2811,14 +2807,23 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				// the persona model AND record the change so the next resume's
 				// applyModel:false path still runs the right model.
 				const applyModel = startAgent !== sessionAgent;
-				const { modelFailed } = await session.applyAgentPersona(startAgent, { recordModelChange: applyModel, applyModel });
+				const { modelFailed } = await session.applyAgentPersona(startAgent, {
+					recordModelChange: applyModel,
+					applyModel,
+				});
 				if (modelFailed) {
 					logger.warn(`--agent: persona "${startAgent.name}" model not available — using current model`, {
 						err: modelFailed,
 					});
 					// Sanitize frontmatter name before embedding in a TUI notice string.
-					const safePersonaName = startAgent.name.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/ +/g, " ").trim();
-					session.emitNotice("warning", `Persona "${safePersonaName}" loaded — model not available, using current model`);
+					const safePersonaName = startAgent.name
+						.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
+						.replace(/ +/g, " ")
+						.trim();
+					session.emitNotice(
+						"warning",
+						`Persona "${safePersonaName}" loaded — model not available, using current model`,
+					);
 				}
 			}
 		}
