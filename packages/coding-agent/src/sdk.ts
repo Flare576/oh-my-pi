@@ -193,6 +193,7 @@ import { queueResolveHandler } from "./tools/resolve";
 import { ttsTool } from "./tools/tts";
 import { resolveActiveRepoContext } from "./utils/active-repo-context";
 import { EventBus } from "./utils/event-bus";
+import { sanitizeStatusText } from "./utils/sanitize";
 import { buildNamedToolChoice } from "./utils/tool-choice";
 import { buildWorkspaceTree, type WorkspaceTree } from "./workspace-tree";
 
@@ -2816,10 +2817,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 						err: modelFailed,
 					});
 					// Sanitize frontmatter name before embedding in a TUI notice string.
-					const safePersonaName = startAgent.name
-						.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
-						.replace(/ +/g, " ")
-						.trim();
+					const safePersonaName = sanitizeStatusText(startAgent.name);
 					session.emitNotice(
 						"warning",
 						`Persona "${safePersonaName}" loaded — model not available, using current model`,

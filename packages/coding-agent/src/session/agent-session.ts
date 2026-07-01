@@ -304,6 +304,7 @@ import { resolveFileDisplayMode } from "../utils/file-display-mode";
 import { extractFileMentions, generateFileMentionMessages } from "../utils/file-mentions";
 import { normalizeModelContextImages } from "../utils/image-loading";
 import { describeAttachedImagesForTextModel } from "../utils/image-vision-fallback";
+import { sanitizeStatusText } from "../utils/sanitize";
 import { generateSessionTitle } from "../utils/title-generator";
 import { buildNamedToolChoice, isToolChoiceActive } from "../utils/tool-choice";
 import type { AuthStorage } from "./auth-storage";
@@ -13814,10 +13815,7 @@ export class AgentSession {
 					applyModel: false,
 				});
 				if (modelFailed && def) {
-					const safeName = def.name
-						.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
-						.replace(/ +/g, " ")
-						.trim();
+					const safeName = sanitizeStatusText(def.name);
 					this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
 				}
 			}
@@ -14085,10 +14083,7 @@ export class AgentSession {
 			applyModel: false,
 		});
 		if (modelFailed && def) {
-			const safeName = def.name
-				.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
-				.replace(/ +/g, " ")
-				.trim();
+			const safeName = sanitizeStatusText(def.name);
 			this.emitNotice("warning", `Persona "${safeName}" loaded — model not available, using current model`);
 		}
 	}
