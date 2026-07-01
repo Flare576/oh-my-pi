@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -11,6 +11,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { CustomTool } from "@oh-my-pi/pi-coding-agent/extensibility/custom-tools/types";
 import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
+import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
 import { TOOL_DISCOVERY_AUTO_THRESHOLD } from "@oh-my-pi/pi-coding-agent/tool-discovery/mode";
 import { removeSyncWithRetries, Snowflake } from "@oh-my-pi/pi-utils";
 import { type } from "arktype";
@@ -72,11 +73,13 @@ describe("createAgentSession MCP discovery prompt gating", () => {
 	});
 
 	beforeEach(() => {
+		vi.spyOn(discovery, "discoverAgents").mockResolvedValue({ agents: [], projectAgentsDir: null });
 		tempDir = path.join(os.tmpdir(), `pi-sdk-mcp-discovery-${Snowflake.next()}`);
 		fs.mkdirSync(tempDir, { recursive: true });
 	});
 
 	afterEach(() => {
+		vi.restoreAllMocks();
 		if (tempDir && fs.existsSync(tempDir)) {
 			removeSyncWithRetries(tempDir);
 		}
