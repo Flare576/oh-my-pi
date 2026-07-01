@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import {
 	type Client,
@@ -17,6 +17,7 @@ import { createAcpConnection } from "@oh-my-pi/pi-coding-agent/modes/acp/acp-mod
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
+import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
 import { TempDir } from "@oh-my-pi/pi-utils";
 
 const TEST_MODEL: Model = buildModel({
@@ -156,6 +157,14 @@ async function closeTransport(writable: WritableStream<unknown>): Promise<void> 
 }
 
 describe("ACP lazy startup", () => {
+	beforeEach(() => {
+		vi.spyOn(discovery, "discoverAgents").mockResolvedValue({ agents: [], projectAgentsDir: null });
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	it("applies schema defaults for ACP background jobs and preserves explicit overrides", async () => {
 		const { runRootCommand } = await import("@oh-my-pi/pi-coding-agent/main");
 
