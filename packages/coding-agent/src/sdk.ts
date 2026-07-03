@@ -2800,11 +2800,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					? null
 					: (sessionAgent ?? primaryAgents[0] ?? null));
 			if (startAgent) {
-				// Stamp-restore skips model application (session model already
-				// correct from history); fresh startup and explicit --agent apply
-				// the persona model AND record the change so the next resume's
-				// mode: "restore" path still runs the right model.
-				const applyModel = startAgent !== sessionAgent;
+				// Apply (and record) the persona model only for a genuinely fresh
+				// selection: no prior session, or an explicit --agent request. An
+				// unstamped legacy session (no persona_change/agent stamp, created
+				// before this feature) still has its model correctly restored from
+				// model_change history earlier in startup — falling back to
+				// primaryAgents[0] here must not treat that as a "cycle" and
+				// silently overwrite the already-restored model.
+				const applyModel = !hasExistingSession || !!namedAgent;
 				const { modelFailed } = await session.applyAgentPersona(startAgent, {
 					mode: applyModel ? "cycle" : "restore",
 				});

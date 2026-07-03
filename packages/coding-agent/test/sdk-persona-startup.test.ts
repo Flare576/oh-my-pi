@@ -226,6 +226,24 @@ describe("createAgentSession — startup persona loading", () => {
 		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "cycle" });
 	});
 
+	it("unstamped legacy session (existing messages, no persona stamp) passes mode: 'restore'", async () => {
+		const sm = SessionManager.inMemory();
+		// Existing session with messages but no persona stamp — simulates a
+		// session created before this feature shipped. getLastAgentName()
+		// returns undefined (no stamp), but hasExistingSession is true.
+		sm.appendMessage(userMsg());
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"])]);
+
+		// Falling back to primaryAgents[0] here must not be treated as a fresh
+		// "cycle" — the session's model was already restored from model_change
+		// history earlier in startup, and mode: "cycle" would silently
+		// overwrite it with the persona's frontmatter model.
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "restore" });
+	});
+
 	it("explicit --agent startup passes mode: 'cycle'", async () => {
 		const sm = SessionManager.inMemory();
 		sm.appendMessage(userMsg(), "alpha");
