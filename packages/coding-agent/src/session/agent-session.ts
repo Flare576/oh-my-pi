@@ -5331,7 +5331,7 @@ export class AgentSession {
 	 * matching how collab guests apply host model/thinkingLevel directly onto
 	 * agent state without replaying persona side effects.
 	 */
-	setReplicaPersonaName(name: string | null): void {
+	setReplicaPersonaName(name: string | null | undefined): void {
 		this.#replicaPersonaName = name;
 	}
 

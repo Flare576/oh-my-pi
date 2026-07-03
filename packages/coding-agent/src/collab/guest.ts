@@ -617,6 +617,11 @@ export class CollabGuestLink {
 		this.#clearAgentMirror();
 		this.#ctx.syncRunningSubagentBadge();
 		this.#ctx.resetObserverRegistry();
+		// Clear the host-mirrored persona override before restoring/creating the
+		// local session — otherwise the stale host persona (or an explicit null
+		// from the host clearing its own persona) outlives the collab and
+		// corrupts the status line and next resume's persona stamp.
+		this.#ctx.session.setReplicaPersonaName(undefined);
 		this.#clearTransientUi();
 		// Replica file stays on disk: it is a valid session file outside the
 		// sessions dir, so it never shows up in /resume but remains readable.
