@@ -257,6 +257,69 @@ describe("applyAgentPersona — model behavior", () => {
 		// Model is unchanged.
 		expect(session.model?.id).toBe(originalModelId);
 	});
+
+	it("resolves a bare pi/default alias to the session's active model, not the configured default (session-inherit parity with spawned agents)", async () => {
+		// Settings.isolated() with no modelRoles override — configured default is
+		// unset, so pre-fix resolution of "pi/default" via resolveModelRoleValue
+		// (role→settings.getModelRole("default")→undefined→resolveConfiguredRolePattern
+		// returns []) failed outright even though the session was already on a
+		// perfectly valid model.
+		await createSession();
+		await session.setModel(getBundledModel("anthropic", "claude-opus-4-5")!, "default");
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["pi/default"] };
+
+		const result = await session.applyAgentPersona(persona);
+
+		expect(result).toEqual({});
+		// Inherited the session's active model (opus) — did not fail, and did not
+		// snap to some unrelated configured default.
+		expect(session.model?.id).toBe("claude-opus-4-5");
+	});
+
+	it("resolves a bare pi/task alias to the session's active model when no task role is configured", async () => {
+		// Same bug as pi/default, on the "task" role: MODEL_PRIO has no "task"
+		// entry, so pre-fix resolution failed outright instead of inheriting the
+		// active model the way a spawned agent's `model: pi/task` would.
+		await createSession();
+		await session.setModel(getBundledModel("anthropic", "claude-opus-4-5")!, "default");
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["pi/task"] };
+
+		const result = await session.applyAgentPersona(persona);
+
+		expect(result).toEqual({});
+		expect(session.model?.id).toBe("claude-opus-4-5");
+	});
+
+	it("an explicitly configured task role still wins over the active model for pi/task", async () => {
+		// Session-inherit is a fallback, not a hard override: when the user
+		// configured modelRoles.task explicitly, that configuration must still
+		// take precedence — matches resolveAgentModelPatterns()'s own contract
+		// (configured patterns win unless the pattern is the bare inherited alias
+		// with nothing configured).
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["global-block"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated({ modelRoles: { task: "anthropic/claude-haiku-4-5" } }),
+			modelRegistry,
+		});
+		await session.setModel(getBundledModel("anthropic", "claude-opus-4-5")!, "default");
+		const persona = { ...makePersona("beta", "HOW-beta"), model: ["pi/task"] };
+
+		const result = await session.applyAgentPersona(persona);
+
+		expect(result).toEqual({});
+		// Configured task role (haiku) wins, NOT the active model (opus).
+		expect(session.model?.id).toBe("claude-haiku-4-5");
+	});
 });
 describe("applyAgentPersona — /agents override exclusivity", () => {
 	let tempDir: TempDir;

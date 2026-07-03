@@ -170,6 +170,7 @@ import {
 	parseModelString,
 	type ResolvedModelRoleValue,
 	resolveAdvisorRoleSelection,
+	resolveAgentModelPatterns,
 	resolveModelOverride,
 	resolveModelRoleValue,
 } from "../config/model-resolver";
@@ -8916,11 +8917,28 @@ export class AgentSession {
 		// Check per-agent model override from /agents settings — takes precedence
 		// over frontmatter model. The override is exclusive: if it is present and
 		// fails to resolve/apply, the loop stops and surfaces modelFailed rather
-		// than silently falling through to frontmatter. Matches spawned-agent
-		// behavior in resolveAgentModelPatterns().
+		// than silently falling through to frontmatter, matching resolveAgentModelPatterns()'s
+		// settingsOverride branch (which is likewise exclusive of the agent's own model).
 		const agentModelOverrides = this.settings.get("task.agentModelOverrides") as Record<string, string | undefined>;
 		const settingsModelOverride = def?.name ? agentModelOverrides[def.name] : undefined;
-		const effectiveModelList = settingsModelOverride ? [settingsModelOverride] : (def?.model ?? []);
+		// Frontmatter models route through resolveAgentModelPatterns — the same
+		// resolver spawned agents use — so a bare `pi/task`/`pi/default` alias
+		// resolves identically whether the agent runs as a subagent or as the
+		// main persona: an explicitly configured role wins, otherwise it inherits
+		// the session's currently active model instead of silently snapping back
+		// to the globally configured default. Skipped when def.model is empty so
+		// a persona with no model field never re-applies the current model as a
+		// spurious "cycle" (would append a no-op model_change/reset the provider
+		// session for zero actual change).
+		const effectiveModelList = settingsModelOverride
+			? [settingsModelOverride]
+			: def?.model?.length
+				? resolveAgentModelPatterns({
+						agentModel: def.model,
+						settings: this.settings,
+						activeModelPattern: this.model ? formatModelString(this.model) : undefined,
+					})
+				: [];
 		if (effectiveModelList.length && applyModel) {
 			const availableModels = this.#modelRegistry.getAvailable();
 			const matchPreferences = getModelMatchPreferences(this.settings);
