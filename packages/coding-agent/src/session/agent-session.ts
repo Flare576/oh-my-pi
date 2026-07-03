@@ -14488,6 +14488,14 @@ export class AgentSession {
 		const previousSystemPrompt = this.agent.state.systemPrompt;
 		const previousBaseSystemPromptBeforeMemoryPromotion = this.#baseSystemPromptBeforeMemoryPromotion;
 		const previousFreshProviderSessionId = this.#freshProviderSessionId;
+		// Settings is a shared instance (main session + every task subagent hold
+		// the same reference); the persona-restore block below calls
+		// reloadForCwd(cwd) to re-scope project settings BEFORE it's known
+		// whether the switch will succeed. Snapshot so a failed switch can put
+		// project-layer settings (task.disabledAgents, task.agentModelOverrides,
+		// provider preferences, …) back where they were, not left pointing at
+		// the target project's config.
+		const previousSettingsCwd = this.settings.getCwd();
 		const previousFallbackSelectedMCPToolNames = previousSessionFile
 			? this.#getSessionDefaultSelectedMCPToolNames(previousSessionFile)
 			: undefined;
@@ -14653,6 +14661,12 @@ export class AgentSession {
 			this.#syncAgentSessionId(previousSessionState.sessionId);
 			this.#rekeyHindsightMemoryForCurrentSessionId();
 			this.#rekeyMnemopiMemoryForCurrentSessionId();
+			// Undo the reloadForCwd(cwd) the persona-restore block ran before the
+			// failure — restore project-layer settings to the previous project
+			// before rebuilding the display context below (which reads settings).
+			if (this.settings.getCwd() !== previousSettingsCwd) {
+				await this.settings.reloadForCwd(previousSettingsCwd);
+			}
 			let restoreMcpError: unknown;
 			try {
 				// `previousSessionContext` was skipped on different-session switches to
