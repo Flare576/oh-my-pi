@@ -242,6 +242,26 @@ describe("InputController.cyclePersona", () => {
 		expect(applyAgentPersona).not.toHaveBeenCalled();
 	});
 
+	it("is a no-op when Tab would reselect the already-active persona", async () => {
+		const { ctx, applyAgentPersona } = createContext();
+		const controller = new InputController(ctx);
+
+		// Single enabled primary agent, already active — cyclePersona would
+		// otherwise compute `next` as the same agent and still call
+		// applyAgentPersona, appending a spurious persona_change/model_change
+		// entry and re-running setModel() for zero actual change.
+		vi.spyOn(discovery, "discoverAgents").mockResolvedValue({
+			agents: [makeAgent("solo", "primary", 1)],
+			projectAgentsDir: null,
+		});
+		await controller.cyclePersona(1);
+		applyAgentPersona.mockClear();
+
+		await controller.cyclePersona(1);
+
+		expect(applyAgentPersona).not.toHaveBeenCalled();
+	});
+
 	it("sorts agents without an order value alphabetically after all ordered agents", async () => {
 		const { ctx, applyAgentPersona } = createContext();
 		const controller = new InputController(ctx);

@@ -1755,6 +1755,11 @@ export class InputController {
 			const baseIdx = currentIdx === -1 && dir === -1 ? primary.length : currentIdx;
 			const nextIdx = (((baseIdx + dir) % primary.length) + primary.length) % primary.length;
 			const next = primary[nextIdx];
+			// Single-persona projects (or a no-op cycle back to the currently active
+			// persona) would otherwise still append a persona_change/model_change
+			// entry and re-run setModel(), resetting provider session state for
+			// zero actual change.
+			if (next.name === currentName) return;
 			const safeName = sanitizeStatusText(next.name);
 			logger.debug("cyclePersona switching", { from: currentName, to: next.name });
 			const { modelFailed } = await this.ctx.session.applyAgentPersona(next, { mode: "cycle" });
