@@ -55,8 +55,16 @@ function createContext() {
 	const ctx = {
 		editor: {
 			setActionKeys: vi.fn(),
+			setCustomKeyHandler: vi.fn(),
+			clearCustomKeyHandlers: vi.fn(),
+			getText: () => "",
 		} as unknown as InteractiveModeContext["editor"],
-		ui: { requestRender: vi.fn() } as unknown as InteractiveModeContext["ui"],
+		ui: {
+			requestRender: vi.fn(),
+			addInputListener: vi.fn(),
+			addStartListener: vi.fn(),
+			getFocused: vi.fn(() => undefined),
+		} as unknown as InteractiveModeContext["ui"],
 		statusLine: statusLine as unknown as InteractiveModeContext["statusLine"],
 		session: {
 			get activePersonaName() {
@@ -340,5 +348,67 @@ describe("no-primary Shift+Tab preserves thinking-level cycle", () => {
 		await controller.cyclePersona(-1);
 
 		expect(applyAgentPersona).not.toHaveBeenCalled();
+	});
+});
+
+describe("stale #hasPrimaryAgents cache heals without restart", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("re-discovers and unblocks Tab after a first primary agent is added mid-session", async () => {
+		const { ctx, applyAgentPersona } = createContext();
+
+		// 1st discoverAgents call: eager priming when setupKeyHandlers() runs —
+		// project starts with zero primary agents, so #hasPrimaryAgents correctly caches false.
+		const discoverSpy = vi.spyOn(discovery, "discoverAgents").mockResolvedValueOnce({
+			agents: [makeAgent("worker", "subagent")],
+			projectAgentsDir: null,
+		});
+
+		const controller = new InputController(ctx);
+		controller.setupKeyHandlers();
+		// Let setupKeyHandlers()'s fire-and-forget #refreshHasPrimaryAgents() settle,
+		// including its `.finally()` clearing #hasPrimaryAgentsRefreshInFlight —
+		// needs a couple more microtask flushes past the discoverAgents promise itself.
+		await discoverSpy.mock.results[0]?.value;
+		await Promise.resolve();
+		await Promise.resolve();
+
+		const onForward = ctx.editor.onCyclePersonaForward;
+		expect(onForward).toBeDefined();
+
+		// 2nd discoverAgents call: queued BEFORE the Tab press that triggers the
+		// background refresh, simulating the user having created their first
+		// `mode: primary` agent via /agents while OMP kept running.
+		discoverSpy.mockResolvedValueOnce({
+			agents: [makeAgent("sisyphus", "primary", 1)],
+			projectAgentsDir: null,
+		});
+
+		// Cache is still false at press time: Tab falls through to completion
+		// (exactly as before this fix), but the press also fires the background
+		// refresh that heals the cache for the NEXT press.
+		expect(onForward?.()).toBe(false);
+		expect(applyAgentPersona).not.toHaveBeenCalled();
+		await discoverSpy.mock.results[1]?.value;
+		await Promise.resolve();
+		await Promise.resolve();
+
+		// 3rd discoverAgents call: a subsequent Tab press now sees a healed cache
+		// and cyclePersona() runs for real, discovering/applying the newly
+		// created primary agent — no restart required.
+		discoverSpy.mockResolvedValueOnce({
+			agents: [makeAgent("sisyphus", "primary", 1)],
+			projectAgentsDir: null,
+		});
+		onForward?.();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "sisyphus" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
 	});
 });

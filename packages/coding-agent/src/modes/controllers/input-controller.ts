@@ -163,8 +163,13 @@ export class InputController {
 	#personaCycleInFlight = false;
 	// Eagerly primed (fire-and-forget) so the FIRST Tab press after startup/persona
 	// discovery already knows whether any primary agents exist, instead of only
-	// learning it after a throwaway cyclePersona() call. Kept in sync by cyclePersona().
+	// learning it after a throwaway cyclePersona() call. Kept in sync by cyclePersona()
+	// and by #refreshHasPrimaryAgents() whenever the cache reads false (e.g. an
+	// /agents-created-while-running primary is invisible until this refreshes it).
 	#hasPrimaryAgents = false;
+	// Prevents #refreshHasPrimaryAgents() from stacking a fresh discoverAgents()
+	// call on every Tab press while a project genuinely has zero primary agents.
+	#hasPrimaryAgentsRefreshInFlight = false;
 	#btwCopyListenerInstalled = false;
 	// Tap counter for the double-← gesture; reset whenever a quiet gap
 	// (>= LEFT_DOUBLE_TAP_MAX_GAP_MS) starts a fresh sequence. See
@@ -436,7 +441,10 @@ export class InputController {
 			// Return false when no persona is active so the editor falls through to
 			// its built-in tab-completion path (file/slash completions) rather than
 			// silently consuming the Tab key.
-			if (!this.#personaCycleInFlight && !this.#hasPrimaryAgents) return false;
+			if (!this.#personaCycleInFlight && !this.#hasPrimaryAgents) {
+				this.#refreshHasPrimaryAgents();
+				return false;
+			}
 			this.cyclePersona(1).catch(err => logger.error("cyclePersona(1) failed", { err: String(err) }));
 		};
 		this.ctx.editor.setActionKeys(
@@ -444,16 +452,15 @@ export class InputController {
 			this.ctx.keybindings.getKeys("app.persona.cycleBackward"),
 		);
 		this.ctx.editor.onCyclePersonaBackward = (): false | undefined => {
-			if (!this.#personaCycleInFlight && !this.#hasPrimaryAgents) return false;
+			if (!this.#personaCycleInFlight && !this.#hasPrimaryAgents) {
+				this.#refreshHasPrimaryAgents();
+				return false;
+			}
 			this.cyclePersona(-1).catch(err => logger.error("cyclePersona(-1) failed", { err: String(err) }));
 		};
 		// Eagerly discover whether any primary agents exist so the first Tab press
 		// works immediately instead of relying on a throwaway cyclePersona() call.
-		(async () => {
-			const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
-			const disabledAgents = this.ctx.session.settings.get("task.disabledAgents") as string[];
-			this.#hasPrimaryAgents = getPrimaryAgents(agents, disabledAgents).length > 0;
-		})().catch(err => logger.error("persona primary-agent discovery failed", { err: String(err) }));
+		this.#refreshHasPrimaryAgents();
 		this.ctx.editor.setActionKeys("app.model.cycleForward", this.ctx.keybindings.getKeys("app.model.cycleForward"));
 		this.ctx.editor.onCycleModelForward = () => this.cycleRoleModel("forward");
 		this.ctx.editor.setActionKeys("app.model.cycleBackward", this.ctx.keybindings.getKeys("app.model.cycleBackward"));
@@ -1721,6 +1728,30 @@ export class InputController {
 			this.ctx.statusLine.invalidate();
 			this.ctx.updateEditorBorderColor();
 		}
+	}
+
+	/**
+	 * Fire-and-forget re-check of whether any primary agent exists, used to heal
+	 * a stale `#hasPrimaryAgents === false` cache — e.g. a project starts with
+	 * zero primary agents (cache correctly false), the user then creates or
+	 * enables the first `mode: primary` agent via `/agents` while OMP is still
+	 * running, and without this refresh the Tab guard keeps falling through to
+	 * tab-completion until restart, since nothing else re-runs discovery.
+	 * `#personaCycleInFlight`-gated callers already get a fresh list from
+	 * cyclePersona() itself; this only fires on the false-cache fallthrough path.
+	 */
+	#refreshHasPrimaryAgents(): void {
+		if (this.#hasPrimaryAgentsRefreshInFlight) return;
+		this.#hasPrimaryAgentsRefreshInFlight = true;
+		(async () => {
+			const { agents } = await discoverAgents(this.ctx.sessionManager.getCwd());
+			const disabledAgents = this.ctx.session.settings.get("task.disabledAgents") as string[];
+			this.#hasPrimaryAgents = getPrimaryAgents(agents, disabledAgents).length > 0;
+		})()
+			.catch(err => logger.error("persona primary-agent discovery failed", { err: String(err) }))
+			.finally(() => {
+				this.#hasPrimaryAgentsRefreshInFlight = false;
+			});
 	}
 
 	async cyclePersona(dir: 1 | -1): Promise<void> {
