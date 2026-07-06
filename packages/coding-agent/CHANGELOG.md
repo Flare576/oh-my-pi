@@ -17,6 +17,10 @@
 - **`agent` field on `SessionMessageEntry`**: Active persona name stamped on all persisted entries — LLM responses, bash/python results, todo-command messages, and todo reminder injections. Optional; sessions without an active agent are unchanged.
 - **Session-resume persona restoration**: `/resume` and `--resume` infer the active agent from the last stamped message entry in the loaded session; falls back to the first primary agent when stamps are absent, the agent no longer exists on disk, or the stamp refers to a non-primary agent. An explicit `--agent` flag always takes precedence.
 
+### Fixed
+
+- Redacted agent persona names (`persona_change` entries and the `agent` stamp on message entries) in shared session snapshots when secret obfuscation is enabled.
+
 ### Changed
 
 - Thinking-level cycling moved from `Shift+Tab` to `Ctrl+Tab`.

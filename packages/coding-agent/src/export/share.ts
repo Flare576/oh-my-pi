@@ -138,7 +138,11 @@ function redactShareSubSession(o: SecretObfuscator, sub: SubSession): SubSession
 function redactShareEntry(o: SecretObfuscator, entry: SessionEntry): SessionEntry {
 	switch (entry.type) {
 		case "message":
-			return { ...entry, message: redactShareMessage(o, entry.message) };
+			return {
+				...entry,
+				message: redactShareMessage(o, entry.message),
+				agent: entry.agent === undefined ? undefined : o.obfuscate(entry.agent),
+			};
 		case "compaction":
 			return {
 				...entry,
@@ -164,6 +168,8 @@ function redactShareEntry(o: SecretObfuscator, entry: SessionEntry): SessionEntr
 			};
 		case "label":
 			return { ...entry, label: entry.label === undefined ? undefined : o.obfuscate(entry.label) };
+		case "persona_change":
+			return { ...entry, personaName: entry.personaName === null ? null : o.obfuscate(entry.personaName) };
 		default:
 			return entry;
 	}
