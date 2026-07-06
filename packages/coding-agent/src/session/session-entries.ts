@@ -253,6 +253,10 @@ export interface UsageStatistics {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	totalTokens: number;
+	orchestrationInput: number;
+	orchestrationOutput: number;
+	orchestrationCacheRead: number;
 	premiumRequests: number;
 	cost: number;
 }
