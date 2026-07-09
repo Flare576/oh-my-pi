@@ -33,8 +33,8 @@ app.history.search: []
 | `app.tools.expand`          | `Ctrl+O`                               | Toggle tool-output expansion                  |
 | `app.thinking.toggle`       | `Ctrl+T`                               | Toggle thinking-block visibility              |
 | `app.persona.cycleForward`  | `Tab`                                  | Cycle persona forward                         |
-| `app.persona.cycleBackward` | `Shift+Tab`                            | Cycle persona backward                        |
-| `app.thinking.cycle`        | `Ctrl+Tab`                             | Cycle thinking level                          |
+| `app.persona.cycleBackward` | `Ctrl+Tab`                             | Cycle persona backward                        |
+| `app.thinking.cycle`        | `Shift+Tab`                            | Cycle thinking level                          |
 | `app.editor.external`       | `Ctrl+G`                               | Edit the draft in `$VISUAL` / `$EDITOR`       |
 | `app.message.followUp`      | `Ctrl+Q`, `Ctrl+Enter`                 | Queue a follow-up message                     |
 | `app.message.dequeue`       | `Alt+Up`                               | Dequeue a queued message back into the editor |

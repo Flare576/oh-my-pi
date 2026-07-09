@@ -2,13 +2,9 @@
 
 ## [Unreleased]
 
-### Breaking Changes
-
-- `Shift+Tab` in the main chat editor now cycles backward through agent personas instead of cycling thinking levels; thinking-level cycling moves to `Ctrl+Tab`. To restore the prior binding, set `app.thinking.cycle` to `["shift+tab"]` in your keybindings config.
-
 ### Added
 
-- **Agent persona cycling**: Add `mode: "primary"` to an agent definition's YAML frontmatter to include it in the Tab cycle. `Tab` cycles forward, `Shift+Tab` cycles backward through primary agents in the main chat editor. Tab cycling only fires when the editor is empty — any typed text (slash command, file path, partial word) falls through to context-aware tab-completion as before. Persona cycling is blocked while the session is streaming or a subagent view is focused.
+- **Agent persona cycling**: Add `mode: "primary"` to an agent definition's YAML frontmatter to include it in the Tab cycle. `Tab` cycles forward, `Ctrl+Tab` cycles backward through primary agents in the main chat editor. Tab cycling only fires when the editor is empty — any typed text (slash command, file path, partial word) falls through to context-aware tab-completion as before. Persona cycling is blocked while the session is streaming or a subagent view is focused.
 - **`--agent <name>` flag**: Selects the initial persona at startup. When primary agents are discovered and no flag is given, the first by `order` (or alphabetically) is loaded automatically. The flag is restricted to primary agents; non-primary/subagent definitions are rejected with a warning and fall back to first primary.
 - **`model` field on `AgentDefinition`**: One or more `<provider>/<id>` strings; the first resolvable model is applied when the persona is loaded via Tab or `--agent`. Startup and `/resume` restore do not write a new `model_change` session entry. If the configured model is unavailable, the persona prompt still applies and a visible warning is shown.
 - **`order` field on `AgentDefinition`**: Controls Tab-cycle position; lower values appear earlier. Agents without `order` sort alphabetically after those with `order`.
@@ -20,10 +16,6 @@
 ### Fixed
 
 - Redacted agent persona names (`persona_change` entries and the `agent` stamp on message entries) in shared session snapshots when secret obfuscation is enabled.
-
-### Changed
-
-- Thinking-level cycling moved from `Shift+Tab` to `Ctrl+Tab`.
 
 ## [16.3.12] - 2026-07-08
 
