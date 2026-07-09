@@ -331,7 +331,7 @@ describe("InputController.cyclePersona", () => {
 	});
 });
 
-describe("no-primary Shift+Tab preserves thinking-level cycle", () => {
+describe("no-primary persona-cycle-backward key preserves thinking-level cycle", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});

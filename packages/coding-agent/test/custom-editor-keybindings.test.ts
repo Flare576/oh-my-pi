@@ -65,6 +65,8 @@ describe("CustomEditor keybindings", () => {
 
 		it("cycles backward on Shift+Tab when the editor is empty", () => {
 			const editor = new CustomEditor(getEditorTheme());
+			editor.setActionKeys("app.thinking.cycle", ["ctrl+tab"]);
+			editor.setActionKeys("app.persona.cycleBackward", ["shift+tab"]);
 			const onCycleBackward = vi.fn();
 			editor.onCyclePersonaBackward = onCycleBackward;
 			editor.handleInput("\x1b[Z");
@@ -73,6 +75,8 @@ describe("CustomEditor keybindings", () => {
 
 		it("does not cycle backward on Shift+Tab when the editor has text", () => {
 			const editor = new CustomEditor(getEditorTheme());
+			editor.setActionKeys("app.thinking.cycle", ["ctrl+tab"]);
+			editor.setActionKeys("app.persona.cycleBackward", ["shift+tab"]);
 			const onCycleBackward = vi.fn();
 			editor.onCyclePersonaBackward = onCycleBackward;
 			editor.handleInput("h");
@@ -94,6 +98,8 @@ describe("CustomEditor keybindings", () => {
 
 		it("falls through to thinking-level cycle when onCyclePersonaBackward returns false", () => {
 			const editor = new CustomEditor(getEditorTheme());
+			editor.setActionKeys("app.thinking.cycle", ["ctrl+tab"]);
+			editor.setActionKeys("app.persona.cycleBackward", ["shift+tab"]);
 			const onCycleBackward = vi.fn(() => false as false);
 			const onCycleThinking = vi.fn();
 			editor.onCyclePersonaBackward = onCycleBackward;
@@ -105,6 +111,8 @@ describe("CustomEditor keybindings", () => {
 
 		it("does NOT call thinking cycle when persona backward succeeds (returns undefined)", () => {
 			const editor = new CustomEditor(getEditorTheme());
+			editor.setActionKeys("app.thinking.cycle", ["ctrl+tab"]);
+			editor.setActionKeys("app.persona.cycleBackward", ["shift+tab"]);
 			const onCycleBackward = vi.fn(); // returns undefined — success
 			const onCycleThinking = vi.fn();
 			editor.onCyclePersonaBackward = onCycleBackward;

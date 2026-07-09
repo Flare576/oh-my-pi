@@ -39,7 +39,7 @@ const DEFAULT_ACTION_KEYS: Record<ConfigurableEditorAction, KeyId[]> = {
 	"app.exit": ["ctrl+d"],
 	"app.suspend": ["ctrl+z"],
 	"app.display.reset": ["ctrl+l"],
-	"app.thinking.cycle": ["ctrl+tab"],
+	"app.thinking.cycle": ["shift+tab"],
 	"app.model.cycleForward": ["ctrl+p"],
 	"app.model.cycleBackward": ["shift+ctrl+p"],
 	"app.model.select": ["alt+m"],
@@ -54,7 +54,7 @@ const DEFAULT_ACTION_KEYS: Record<ConfigurableEditorAction, KeyId[]> = {
 	"app.clipboard.pasteTextRaw": ["ctrl+shift+v", "alt+shift+v"],
 	"app.clipboard.copyPrompt": ["alt+shift+c"],
 	"app.persona.cycleForward": ["tab"],
-	"app.persona.cycleBackward": ["shift+tab"],
+	"app.persona.cycleBackward": ["ctrl+tab"],
 };
 
 function buildMatchKeys(keys: readonly KeyId[]): Set<string> {
@@ -796,8 +796,9 @@ export class CustomEditor extends Editor {
 				editorEmpty
 			) {
 				if (this.onCyclePersonaBackward() !== false) return;
-				// No primary agents: fall through to thinking-level cycle so projects
-				// without mode:primary agents preserve the prior Shift+Tab behavior.
+				// No primary agents: fall through to thinking-level cycle — relevant when a
+				// user's own keybindings.yml rebinds persona.cycleBackward onto the same key
+				// as thinking.cycle; the shipped defaults no longer collide.
 				if (this.onCycleThinkingLevel) {
 					this.onCycleThinkingLevel();
 					return;

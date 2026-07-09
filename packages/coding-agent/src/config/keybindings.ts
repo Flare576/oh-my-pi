@@ -98,7 +98,7 @@ export const KEYBINDINGS = {
 		description: "Reset terminal display",
 	},
 	"app.thinking.cycle": {
-		defaultKeys: "ctrl+tab",
+		defaultKeys: "shift+tab",
 		description: "Cycle thinking level",
 	},
 	"app.thinking.toggle": {
@@ -110,7 +110,7 @@ export const KEYBINDINGS = {
 		description: "Cycle to next primary agent persona",
 	},
 	"app.persona.cycleBackward": {
-		defaultKeys: "shift+tab",
+		defaultKeys: "ctrl+tab",
 		description: "Cycle to previous primary agent persona",
 	},
 	"app.model.cycleForward": {
