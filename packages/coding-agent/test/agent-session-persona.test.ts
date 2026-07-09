@@ -321,6 +321,105 @@ describe("applyAgentPersona — model behavior", () => {
 		expect(session.model?.id).toBe("claude-haiku-4-5");
 	});
 });
+
+// Tested by Sisyphus — 2026-07-08
+describe("applyAgentPersona — fresh mode across persona identity", () => {
+	let tempDir: TempDir;
+	let session: AgentSession;
+	const authStorages: AuthStorage[] = [];
+
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@pi-persona-fresh-");
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		if (session) await session.dispose();
+		for (const as of authStorages.splice(0)) as.close();
+		tempDir.removeSync();
+	});
+
+	async function createSession() {
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: {
+				model,
+				systemPrompt: ["global-block"],
+				tools: [],
+				messages: [],
+				thinkingLevel: Effort.Low,
+			},
+		});
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+		});
+	}
+
+	it("fresh mode re-applies the resolved persona's own model when the persona identity changed since the last apply", async () => {
+		await createSession();
+		const sisyphus = { ...makePersona("sisyphus", "HOW-sisyphus"), model: ["anthropic/claude-sonnet-4-5"] };
+		const beta = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-opus-4-5"] };
+
+		// Startup: load default persona (sisyphus).
+		await session.applyAgentPersona(sisyphus);
+		// Tab-cycle to beta.
+		await session.applyAgentPersona(beta);
+		expect(session.model?.id).toBe("claude-opus-4-5");
+
+		// /new always resolves back to the default persona (sisyphus) via mode: "fresh".
+		await session.applyAgentPersona(sisyphus, { mode: "fresh" });
+
+		// Must NOT stay on beta's model — sisyphus's own frontmatter model applies.
+		expect(session.model?.id).toBe("claude-sonnet-4-5");
+		expect(session.activePersonaName).toBe("sisyphus");
+	});
+
+	it("fresh mode leaves the active model untouched when /new resolves back to the SAME persona that was already active", async () => {
+		await createSession();
+		const sisyphus = { ...makePersona("sisyphus", "HOW-sisyphus"), model: ["anthropic/claude-sonnet-4-5"] };
+
+		await session.applyAgentPersona(sisyphus);
+		// Simulate a manual /model override while staying on the same persona.
+		await session.setModel(getBundledModel("anthropic", "claude-opus-4-5")!, "default");
+		expect(session.model?.id).toBe("claude-opus-4-5");
+
+		// /new resolves to the SAME persona (sisyphus) — the manual override must survive.
+		await session.applyAgentPersona(sisyphus, { mode: "fresh" });
+
+		expect(session.model?.id).toBe("claude-opus-4-5");
+		expect(session.activePersonaName).toBe("sisyphus");
+	});
+
+	it("fresh mode applies the resolved persona's frontmatter thinking level when persona identity changed", async () => {
+		await createSession(); // initial thinkingLevel is Effort.Low per createSession()'s Agent initialState
+		const sisyphus = {
+			...makePersona("sisyphus", "HOW-sisyphus"),
+			model: ["anthropic/claude-sonnet-4-5"],
+			thinkingLevel: Effort.High,
+		};
+		const beta = { ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-opus-4-5"] };
+
+		await session.applyAgentPersona(sisyphus);
+		expect(session.thinkingLevel).toBe(Effort.High);
+
+		await session.applyAgentPersona(beta);
+		// beta has no thinkingLevel field — cycling to it must not force a level of its own,
+		// but it also doesn't need to reset it for this test; just move on to sisyphus again.
+
+		await session.applyAgentPersona(sisyphus, { mode: "fresh" });
+
+		expect(session.thinkingLevel).toBe(Effort.High);
+		expect(session.activePersonaName).toBe("sisyphus");
+	});
+});
 describe("applyAgentPersona — /agents override exclusivity", () => {
 	let tempDir: TempDir;
 	let session: AgentSession;

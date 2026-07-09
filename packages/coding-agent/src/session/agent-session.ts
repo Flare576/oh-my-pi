@@ -8794,7 +8794,9 @@ export class AgentSession {
 		}
 		// Mirror the thinking/serviceTier pattern: apply and record the default persona
 		// for fresh-session semantics (/new is a clean slate — resolves to first primary).
-		// mode: "fresh" — the model is already set from startup or prior user action.
+		// mode: "fresh" — if this default persona differs from the one just active,
+		// its own model/thinking level applies (see PersonaApplyMode); otherwise the
+		// current model is left alone.
 		if (this.#resolvePersona) {
 			const def = await this.#resolvePersona(undefined, this.sessionManager.getCwd());
 			await this.applyAgentPersona(def, { mode: "fresh" });
@@ -9093,11 +9095,18 @@ export class AgentSession {
 		options?: { mode?: PersonaApplyMode },
 	): Promise<{ modelFailed?: string }> {
 		const mode = options?.mode ?? "cycle";
+		// "fresh" (/new) always resolves to the default persona regardless of what
+		// was active — a clean slate, not a continuation. When that default persona
+		// differs from the one active a moment ago, the in-memory model still
+		// belongs to the OUTGOING persona (set by its own frontmatter during the
+		// prior cycle); leaving it untouched would attach e.g. Beta's GPT-5.4 to
+		// Sisyphus's identity. Only skip model application when /new resolves back
+		// to the SAME persona that was already active — that's the case where the
+		// current model may be a deliberate manual /model override worth preserving.
+		const personaChanged = (def?.name?.toLowerCase() ?? null) !== (this.#activePersona?.name?.toLowerCase() ?? null);
 		// "restore" is silent: no model change, no thinking-level change, no history
-		// recording. "fresh" records the persona change but leaves the current model
-		// untouched (matches historic {recordModelChange:true, applyModel:false}).
-		// Only "cycle" (Tab / explicit --agent) actually swaps the model.
-		const applyModel = mode === "cycle";
+		// recording. "cycle" (Tab / explicit --agent) always swaps the model.
+		const applyModel = mode === "cycle" || (mode === "fresh" && personaChanged);
 		const record = mode !== "restore";
 		logger.debug("applyAgentPersona called", { name: def?.name ?? null, mode });
 		// Apply the model before mutating visible persona state. Failure is returned
@@ -9180,7 +9189,11 @@ export class AgentSession {
 		// thinking without specifying a model string suffix. Skipped when the model
 		// selector already set an explicit thinking level — frontmatter must not
 		// clobber a user's `:high`-style override.
-		if (def?.thinkingLevel !== undefined && mode === "cycle" && !modelSetExplicitThinking) {
+		if (
+			def?.thinkingLevel !== undefined &&
+			(mode === "cycle" || (mode === "fresh" && personaChanged)) &&
+			!modelSetExplicitThinking
+		) {
 			this.setThinkingLevel(def.thinkingLevel, false, record);
 		}
 		this.#activePersona = def;

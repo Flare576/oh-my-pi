@@ -323,7 +323,10 @@ export type PersonaStamp = string | null | undefined;
  * - `"cycle"` — user-initiated Tab cycle / explicit `--agent` startup: apply model,
  *   apply frontmatter thinking level (unless a model selector already set one explicitly),
  *   and record the change for resume.
- * - `"fresh"` — `/new` session: record the persona change but leave the current model alone.
+ * - `"fresh"` — `/new` session: always resolves to the default persona. If that
+ *   differs from the persona active a moment ago, apply its model/thinking level
+ *   (the outgoing persona's model shouldn't stick to the new identity). If it's
+ *   the same persona, leave the current model alone (preserves a manual override).
  * - `"restore"` — silent restoration (switchSession, branch navigation): no model change,
  *   no thinking-level change, no history recording.
  */
