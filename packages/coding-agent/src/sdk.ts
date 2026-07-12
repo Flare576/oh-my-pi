@@ -2993,7 +2993,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				// model_change history earlier in startup — falling back to
 				// primaryAgents[0] here must not treat that as a "cycle" and
 				// silently overwrite the already-restored model.
-				const applyModel = !hasExistingSession || !!namedAgent;
+				// A fork is a continuation even when the parent's own history is
+				// empty (e.g. `--fork <path>` against a subagent session, or an
+				// externally-created empty session file) — `hasExistingSession`
+				// alone can't see that, since it only counts entries actually
+				// copied over. Treat any forked session as non-fresh here so its
+				// caller-resolved model (already threaded through the normal
+				// fallback chain above) survives persona application undisturbed.
+				const isFork = session.sessionManager.getHeader()?.parentSession !== undefined;
+				const applyModel = (!hasExistingSession && !isFork) || !!namedAgent;
 				const { modelFailed } = await session.applyAgentPersona(startAgent, {
 					mode: applyModel ? "cycle" : "restore",
 				});

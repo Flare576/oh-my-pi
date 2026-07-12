@@ -16,6 +16,7 @@
 ### Fixed
 
 - Redacted agent persona names (`persona_change` entries and the `agent` stamp on message entries) in shared session snapshots when secret obfuscation is enabled.
+- Persona/model restore on session load now treats any forked session (`--fork`, `/fork`, `/tan`) as a continuation, not a fresh start, even when the parent session's own history is empty. Previously `hasExistingSession` looked only at copied entry count, so forking a history-less session (e.g. `--fork` against a subagent's session file) fell through to "cycle" mode and silently reset the model — discarding a caller-resolved model and, for forks that also inherit a provider prompt-cache key, clearing that key as collateral.
 
 ## [16.4.6] - 2026-07-12
 
