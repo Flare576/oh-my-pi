@@ -180,10 +180,14 @@ export class InputController {
 	#personaCycleInFlight = false;
 	// Eagerly primed (fire-and-forget) so the FIRST Tab press after startup/persona
 	// discovery already knows whether any primary agents exist, instead of only
-	// learning it after a throwaway cyclePersona() call. Kept in sync by cyclePersona()
-	// and by #refreshHasPrimaryAgents() whenever the cache reads false (e.g. an
-	// /agents-created-while-running primary is invisible until this refreshes it).
-	#hasPrimaryAgents = false;
+	// learning it after a throwaway cyclePersona() call. `undefined` = discovery
+	// hasn't resolved yet (distinct from a known-empty project): while unknown,
+	// Tab presses fall through to cyclePersona() (which does its own fresh
+	// discovery) rather than being misrouted to autocomplete before the prime
+	// settles. Kept in sync by cyclePersona() and by #refreshHasPrimaryAgents()
+	// whenever the cache reads false (e.g. an /agents-created-while-running
+	// primary is invisible until this refreshes it).
+	#hasPrimaryAgents: boolean | undefined = undefined;
 	// Prevents #refreshHasPrimaryAgents() from stacking a fresh discoverAgents()
 	// call on every Tab press while a project genuinely has zero primary agents.
 	#hasPrimaryAgentsRefreshInFlight = false;
@@ -419,7 +423,7 @@ export class InputController {
 			// Return false when no persona is active so the editor falls through to
 			// its built-in tab-completion path (file/slash completions) rather than
 			// silently consuming the Tab key.
-			if (!this.#personaCycleInFlight && !this.#hasPrimaryAgents) {
+			if (!this.#personaCycleInFlight && this.#hasPrimaryAgents === false) {
 				this.#refreshHasPrimaryAgents();
 				return false;
 			}
@@ -430,7 +434,7 @@ export class InputController {
 			this.ctx.keybindings.getKeys("app.persona.cycleBackward"),
 		);
 		this.ctx.editor.onCyclePersonaBackward = (): false | undefined => {
-			if (!this.#personaCycleInFlight && !this.#hasPrimaryAgents) {
+			if (!this.#personaCycleInFlight && this.#hasPrimaryAgents === false) {
 				this.#refreshHasPrimaryAgents();
 				return false;
 			}

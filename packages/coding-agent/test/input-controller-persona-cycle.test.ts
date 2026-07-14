@@ -412,3 +412,53 @@ describe("stale #hasPrimaryAgents cache heals without restart", () => {
 		);
 	});
 });
+
+describe("delayed initial discovery does not misroute the first Tab press", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("routes to cyclePersona (not autocomplete) while the eager prime is still in flight", async () => {
+		const { ctx, applyAgentPersona } = createContext();
+
+		// The eager prime's discoverAgents() call never resolves within this
+		// test's synchronous window — simulates a slow discovery scan racing
+		// the very first keypress right after startup, before #hasPrimaryAgents
+		// has moved past its initial "unknown" state.
+		const { promise: primePromise, resolve: resolvePrime } = Promise.withResolvers<{
+			agents: AgentDefinition[];
+			projectAgentsDir: string | null;
+		}>();
+		const discoverSpy = vi.spyOn(discovery, "discoverAgents").mockReturnValueOnce(primePromise);
+
+		const controller = new InputController(ctx);
+		controller.setupKeyHandlers();
+
+		// cyclePersona()'s own fresh discovery call, queued for when the Tab
+		// handler below runs.
+		discoverSpy.mockResolvedValueOnce({
+			agents: [makeAgent("sisyphus", "primary", 1)],
+			projectAgentsDir: null,
+		});
+
+		const onForward = ctx.editor.onCyclePersonaForward;
+		expect(onForward).toBeDefined();
+
+		// Press Tab before the initial prime settles: #hasPrimaryAgents is
+		// `undefined` (unknown), not `false` — the guard must not treat unknown
+		// as "no primary agents" and fall through to autocomplete.
+		const result = onForward?.();
+		expect(result).not.toBe(false);
+
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(applyAgentPersona).toHaveBeenCalledWith(
+			expect.objectContaining({ name: "sisyphus" }),
+			expect.objectContaining({ mode: "cycle" }),
+		);
+
+		resolvePrime({ agents: [], projectAgentsDir: null });
+	});
+});
