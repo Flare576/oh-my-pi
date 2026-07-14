@@ -540,3 +540,59 @@ describe("newSession — model recording", () => {
 		expect(recorded).toBe("anthropic/claude-opus-4-5");
 	});
 });
+
+describe("newSession — fresh persona model warning", () => {
+	let tempDir: TempDir;
+	let session: AgentSession;
+	const authStorages: AuthStorage[] = [];
+
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@pi-new-session-persona-warn-");
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		if (session) await session.dispose();
+		for (const as of authStorages.splice(0)) as.close();
+		tempDir.removeSync();
+	});
+
+	it("surfaces a visible warning when /new resolves to a default persona whose model can't be resolved", async () => {
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["global"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));
+		// The default persona's own model can never resolve — matches the
+		// review scenario: outgoing persona is "beta" on a resolvable model,
+		// /new falls back to a default persona ("alpha") whose model is bogus.
+		const alpha = { ...makePersona("alpha", "HOW-alpha"), model: ["nonexistent-provider/nonexistent-model-xyz"] };
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+			resolvePersona: async () => alpha,
+		});
+		await session.applyAgentPersona({ ...makePersona("beta", "HOW-beta"), model: ["anthropic/claude-sonnet-4-5"] });
+		expect(session.activePersonaName).toBe("beta");
+
+		const noticeSpy = vi.spyOn(session, "emitNotice");
+		await session.newSession();
+
+		// Persona prompt switches to alpha despite the model failure...
+		expect(session.activePersonaName).toBe("alpha");
+		// ...but the model silently stayed on beta's resolvable model instead of
+		// alpha's advertised (unresolvable) one — that silent retention is exactly
+		// what the visible warning below must call out.
+		expect(session.model?.id).toBe("claude-sonnet-4-5");
+		expect(noticeSpy).toHaveBeenCalledWith(
+			"warning",
+			expect.stringContaining('Persona "alpha" loaded — model not available, using current model'),
+		);
+	});
+});

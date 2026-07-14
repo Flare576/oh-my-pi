@@ -9517,7 +9517,8 @@ export class AgentSession {
 		// current model is left alone.
 		if (this.#resolvePersona) {
 			const def = await this.#resolvePersona(undefined, this.sessionManager.getCwd());
-			await this.applyAgentPersona(def, { mode: "fresh" });
+			const { modelFailed } = await this.applyAgentPersona(def, { mode: "fresh" });
+			if (modelFailed && def) this.#emitPersonaModelWarn(def);
 		}
 		if (nextDiscoverySessionToolNames) {
 			await this.#applyActiveToolsByName(nextDiscoverySessionToolNames, { persistMCPSelection: false });
