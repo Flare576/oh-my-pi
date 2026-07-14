@@ -18,6 +18,124 @@
 - Redacted agent persona names (`persona_change` entries and the `agent` stamp on message entries) in shared session snapshots when secret obfuscation is enabled.
 - Persona/model restore on session load now treats any forked session (`--fork`, `/fork`, `/tan`) as a continuation, not a fresh start, even when the parent session's own history is empty. Previously `hasExistingSession` looked only at copied entry count, so forking a history-less session (e.g. `--fork` against a subagent's session file) fell through to "cycle" mode and silently reset the model — discarding a caller-resolved model and, for forks that also inherit a provider prompt-cache key, clearing that key as collateral.
 
+### Changed
+
+- Provider rate-limit response headers are now ingested for every provider with a header parser (previously Anthropic-only), wiring OpenAI Codex responses into proactive account blocking so multi-account sessions rotate off an exhausted account without hitting a wire 429.
+
+## [16.5.1] - 2026-07-14
+
+### Changed
+
+- Enhanced Anthropic credential and usage management to support organization-scoped accounts, including displaying organization names in /usage, /logout, omp token --list, and OAuth login success messages, resolving active-account matching for shared organizations, and deduplicating identities during migration.
+
+### Fixed
+
+- Fixed compatibility of GNU-flavored shell builtins (such as stat, date, sed, mktemp, tail, find, base64, and ln) when invoked with macOS/BSD-style arguments.
+- Fixed subagent model and thinking level resolution to correctly respect the configured modelRoles.task selector instead of intermittently falling back to the parent session's model.
+- Fixed TUI rendering issues, including preventing macOS runtime diagnostics from painting into the viewport, bounding transcript retention in long sessions, and fixing scrollback repainting when collapsing history.
+- Fixed /tan and /fork clones failing to inherit or persist the parent session's prompt cache keys.
+- Fixed Python and JavaScript evaluation kernels suspending the CLI on subprocess foregrounding, deadlocking on non-serializable values, or losing in-flight subagent work during external aborts.
+- Fixed configured retry.fallbackChains failing to engage when encountering non-retryable provider errors.
+- Improved auto-compaction to automatically drop images and elide content when context is tight, and added persistent warning badges to the compaction divider when manual intervention is required.
+- Fixed the downshift plan nudge silently ending runs with no code written when the model answered with a text-only reply.
+- Fixed launch tool rendering and status reporting, including resolving contradictory readiness timeout messages and preventing backgrounded Bash blocks from continuing to repaint.
+- Fixed Advisor containment and timing issues, preventing hallucinated tool calls from contaminating later advice and ensuring late-arriving transcript deltas are coalesced before advisor calls.
+- Fixed omp update on npm-managed Windows installations to prevent downloaded release binaries from overwriting npm launchers.
+- Fixed --max-time duration values (e.g., 5s, 10m, 1h) being ignored instead of setting a session deadline.
+- Fixed omp plugin install --force failing with a dependency loop when replacing an existing pinned Git plugin source.
+- Fixed MCP tools receiving session image attachments as raw local:// URIs instead of resolving them to local filesystem paths.
+- Fixed Pyright LSP semantic requests hanging during startup.
+- Fixed Codex web search requests for GPT-5.6 Responses-Lite models.
+- Fixed custom model/provider configuration discovery to correctly load ~/.omp/agent/models.yaml when models.yml is absent.
+
+## [16.5.0] - 2026-07-13
+
+### Breaking Changes
+
+- Replaced the `--reasoning-slide-*` flag family with a unified `--prewalk` mechanism (`--prewalk`, `--prewalk-into <model>`, and `--no-prewalk`) to manage model handoffs during execution.
+
+### Added
+
+- Added a new `--prewalk` execution flow (with `--prewalk-into <model>` and `--no-prewalk` overrides) that starts tasks on a strong model for planning and todo initialization before handing off to a faster, cheaper model for implementation.
+ - Added a status line annotation for the active prewalk phase (armed or active).
+ - Added the `tui.scrollbackRebuild` setting to gate the erase-and-replay native scrollback rebuild mechanism (defaults to off).
+- Added a display setting to toggle between collapsing or keeping compacted history inline in live session displays.
+- Added a compact session-only model picker (Alt+P) for quick model switching, featuring `@` search to quickly list and apply configured quick roles.
+- Redesigned Agent Hub entries into a cleaner two-line card layout showing identity, active model, reasoning level, age, and task description.
+- Added a project-scoped `launch` tool (gated by `launch.enabled`) for managing shared long-running services and debuggers, featuring readiness probes, bounded logs, PTY input, restart policies, and automatic teardown.
+- Added support for `detached` launches, allowing standalone services to survive broker shutdowns and reconnect to subsequent sessions.
+
+### Changed
+
+- Updated JSON logs (`--mode json`) to include provider payloads in auto-compaction events.
+- Updated tangential agent forks (`/tan`) to ignore parent session history and focus exclusively on the new request, hardening isolation with cleared todo lists and concurrent editing warnings.
+- Added visual markers in the transcript for elided tool calls that have no corresponding result.
+- Updated the status event log to prioritize the most recent entries in the display window.
+- Upgraded `@agentclientprotocol/sdk` to version 1.2.1.
+
+### Fixed
+
+- Fixed terminal scrollback duplication issues with expanded streaming edit previews (Ctrl+O) by using a viewport-sized tail window.
+- Fixed custom model role resolution and alias parsing, ensuring canonical role selectors (`@role`) and thinking suffixes resolve correctly across all configuration surfaces.
+- Fixed quadratic growth in JSON logs by eliding redundant message snapshots and payloads.
+- Fixed prompt cache misses and incorrect cache key pinning for `/tan` and `/fork` clones.
+- Fixed inconsistent history rendering and scrollback repainting when toggling the display setting for compacted items.
+- Fixed `retry.fallbackChains` failing to engage on non-retryable provider errors, ensuring the agent correctly falls back to the next candidate model.
+- Improved auto-compaction to automatically drop images and elide content when context is tight, and added persistent warning badges when manual intervention is required.
+- Fixed backgrounded Bash blocks continuing to repaint with live output; they now freeze with a compact job notice while completion is delivered separately.
+- Fixed rendering, status display, and PTY control sequence formatting issues in the `launch` tool.
+- Fixed in-process shell builtins (including `stat`, `date`, `sed`, `mktemp`, `tail`, `find`, `base64`, and `ln`) to correctly detect and translate macOS/BSD-style arguments and flags, preventing failures caused by GNU-only assumptions.
+
+### Removed
+
+- Removed the `--prewalk-boomerang` feature and its associated configuration setting.
+- Removed the unreliable Bing and Yahoo HTML-scraping web search providers.
+
+## [16.4.8] - 2026-07-12
+
+### Added
+
+- Added a predicate form to the browser run's `wait()` helper: `wait(fn, { timeout?, interval? })` polls the function (sync or async) until truthy and resolves with that value, failing with a named timeout error (deadline clamped under the cell budget so it always beats the opaque whole-cell timeout) instead of Bun's `sleep expects a number` or a whole-cell stall from in-page polling Promises; both `wait` forms now register in the stall diagnosis of cell timeouts
+- Added `--reasoning-slide-model` and `--reasoning-slide-turns` to switch a running agent from its initial model after a fixed number of completed assistant turns
+- Added `--reasoning-slide-plan` (with `--reasoning-slide-plan-at`) to steer a hidden deep-planning nudge into the run before the reasoning slide; the switch is held until a substantial plan turn actually lands (bounded by a grace window) and the nudge is scrubbed from the LLM context at the switch so the fast model inherits only the produced plan
+- Added `--reasoning-slide-on-action` to trigger the reasoning slide at the first completed turn that ran an edit/write tool instead of a fixed turn count (bash is excluded — it doubles as exploration)
+
+### Changed
+
+- Replaced the Alt+P / `/switch` temporary model selector's fullscreen /models hub with a compact full-width floating overlay anchored above the editor (~40% of the terminal height): just the searchable model list — no provider sidebar or role management — with the session's active model highlighted and preselected
+- Improved tab recovery after timeouts by automatically clearing pending navigation and JS dialogs
+- Made `tab.goto` navigation failures catchable with a named error instead of triggering a whole-cell timeout
+- Made `tab.evaluate` run in the page's main JavaScript world so page-defined globals are available without a directive
+- Enhanced cell timeout messages to include identification of stalled operations and blocking JS dialogs
+- Browser `run` on a tab the supervisor force-killed now reports the kill reason instead of a bare "not alive"
+- Refined agent workflow to prioritize smoke testing and reduce mandatory upfront test generation
+
+### Fixed
+
+- Fixed the eval tool's status-event tree truncating from the bottom: the newest `log()` progress lines were hidden behind an `… N more` marker while the oldest stayed visible; the tree now shows a tail window behind an `… N earlier` marker, and the expanded view widens to the viewport instead of a fixed 10 events
+- Fixed the `//!world=main` directive being silently ignored for string expressions passed to raw Puppeteer evaluation APIs
+- Fixed tab reuse issues where hung navigation or unhandled modals would cause initialization to stall and trigger a force-kill
+- Improved search reliability for Perplexity provider by forcing retrieval for all queries
+- Fixed JS eval cells losing top-level `function` and `var` declarations across cells when the defining cell contained top-level `await` — the async wrapper scoped them to the cell's IIFE instead of publishing them to the worker global
+
+## [16.4.7] - 2026-07-12
+
+### Added
+
+- Enabled Home and End keyboard navigation in the model browser
+- Added a `c` hotkey in the plan-review overlay that copies the current reviewed plan markdown to the system clipboard, including in-overlay edits.
+
+### Changed
+
+- Streamlined list view styling by removing inline model role chips from row entries
+- Reworked /models hub selection visuals: the background highlight band is reserved for mouse hover, the keyboard position is a cursor glyph drawn only in the pane that owns the arrow keys, and the sidebar's active scope renders as a bold accent label
+- Removed the redundant "login" label from inactive (locked) provider entries in the Model Hub sidebar
+
+### Fixed
+
+- Fixed PageUp/PageDown in the model browser wrapping past the list edges instead of clamping
+- Fixed the hover highlight sticking to the last hovered model row when the pointer moved into the provider sidebar
+
 ## [16.4.6] - 2026-07-12
 
 ### Added

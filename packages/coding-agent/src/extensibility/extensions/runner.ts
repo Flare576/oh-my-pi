@@ -7,6 +7,7 @@ import type { KeyId } from "@oh-my-pi/pi-tui";
 import { logger } from "@oh-my-pi/pi-utils";
 import type { ModelRegistry } from "../../config/model-registry";
 import type { Settings } from "../../config/settings";
+import type { LocalProtocolOptions } from "../../internal-urls/local-protocol";
 import type { MemoryRuntimeContext } from "../../memory-backend";
 import { type Theme, theme } from "../../modes/theme/theme";
 import type { SessionManager } from "../../session/session-manager";
@@ -258,6 +259,7 @@ export class ExtensionRunner {
 		getMemory?: () => MemoryRuntimeContext | undefined,
 		private readonly settings?: Settings,
 		getActivePersonaName?: () => string | null,
+		private readonly localProtocolOptions?: LocalProtocolOptions,
 	) {
 		this.#uiContext = noOpUIContext;
 		this.#getMemoryFn = getMemory;
@@ -545,6 +547,7 @@ export class ExtensionRunner {
 			get activePersonaName() {
 				return getActivePersonaName();
 			},
+			localProtocolOptions: this.localProtocolOptions,
 			memory: this.#getMemoryFn?.(),
 		};
 	}
