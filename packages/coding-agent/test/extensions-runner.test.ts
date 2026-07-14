@@ -93,6 +93,32 @@ describe("ExtensionRunner", () => {
 		expect(runner.createContext().localProtocolOptions).toBe(localProtocolOptions);
 	});
 
+	it("createCommandContext().activePersonaName is a live getter, not a snapshot (switch-then-read)", async () => {
+		let currentPersona: string | null = "alpha";
+		const result = await loadTestExtensions();
+		const runner = new ExtensionRunner(
+			result.extensions,
+			result.runtime,
+			tempDir.path(),
+			sessionManager,
+			modelRegistry,
+			undefined,
+			undefined,
+			() => currentPersona,
+		);
+
+		// Capture the context ONCE — mirroring a command handler that reads
+		// ctx.activePersonaName again after awaiting switchSession()/newSession()/
+		// branch()/navigateTree() on that SAME captured object, not a fresh call.
+		const ctx = runner.createCommandContext();
+		expect(ctx.activePersonaName).toBe("alpha");
+
+		// Simulate a persona switch happening during the handler's lifetime.
+		currentPersona = "beta";
+
+		expect(ctx.activePersonaName).toBe("beta");
+	});
+
 	describe("shortcut conflicts", () => {
 		it("warns when extension shortcut conflicts with built-in", async () => {
 			const extCode = `

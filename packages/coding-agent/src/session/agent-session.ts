@@ -8616,6 +8616,7 @@ export class AgentSession {
 			return this.#extensionRunner.createCommandContext();
 		}
 
+		const session = this;
 		return {
 			ui: noOpUIContext,
 			hasUI: false,
@@ -8667,7 +8668,9 @@ export class AgentSession {
 				await this.reload();
 			},
 			getSystemPrompt: () => this.systemPrompt,
-			activePersonaName: this.activePersonaName,
+			get activePersonaName() {
+				return session.activePersonaName;
+			},
 		};
 	}
 
@@ -8693,6 +8696,9 @@ export class AgentSession {
 		const baseCtx = this.#createCommandContext();
 		const ctx = {
 			...baseCtx,
+			get activePersonaName() {
+				return baseCtx.activePersonaName;
+			},
 			hasQueuedMessages: baseCtx.hasPendingMessages,
 		} as unknown as HookCommandContext;
 

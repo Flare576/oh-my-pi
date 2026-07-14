@@ -560,8 +560,12 @@ export class ExtensionRunner {
 	}
 
 	createCommandContext(): ExtensionCommandContext {
+		const base = this.createContext();
 		return {
-			...this.createContext(),
+			...base,
+			get activePersonaName() {
+				return base.activePersonaName;
+			},
 			getContextUsage: () => this.#getContextUsageFn(),
 			waitForIdle: () => this.#waitForIdleFn(),
 			newSession: options => this.#newSessionHandler(options),

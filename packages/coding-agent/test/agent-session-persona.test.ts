@@ -5,6 +5,7 @@ import { Effort } from "@oh-my-pi/pi-ai";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import type { HookCommandContext } from "@oh-my-pi/pi-coding-agent/extensibility/hooks/types";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
@@ -594,5 +595,76 @@ describe("newSession — fresh persona model warning", () => {
 			"warning",
 			expect.stringContaining('Persona "alpha" loaded — model not available, using current model'),
 		);
+	});
+});
+
+describe("custom command context — activePersonaName liveness", () => {
+	let tempDir: TempDir;
+	let session: AgentSession;
+	const authStorages: AuthStorage[] = [];
+
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@pi-custom-command-persona-");
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		if (session) await session.dispose();
+		for (const as of authStorages.splice(0)) as.close();
+		tempDir.removeSync();
+	});
+
+	it("ctx.activePersonaName in a custom command reflects a persona switch that happens mid-handler", async () => {
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["global"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));
+
+		const { promise: gate, resolve: releaseGate } = Promise.withResolvers<void>();
+		let duringName: string | null | undefined;
+		let afterName: string | null | undefined;
+		const command = {
+			path: "/virtual/check.ts",
+			resolvedPath: "/virtual/check.ts",
+			source: "user" as const,
+			command: {
+				name: "check",
+				description: "test command",
+				execute: async (_args: string[], ctx: HookCommandContext) => {
+					const persona = ctx as unknown as { activePersonaName: string | null };
+					duringName = persona.activePersonaName;
+					await gate;
+					afterName = persona.activePersonaName;
+					return undefined;
+				},
+			},
+		};
+
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+			customCommands: [command],
+		});
+		await session.applyAgentPersona(makePersona("alpha", "HOW-alpha"));
+
+		const promptDone = session.prompt("/check");
+		// Let the handler's synchronous prefix run and park on `gate`.
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(duringName).toBe("alpha");
+
+		// Switch persona while the handler is parked mid-flight, then release it.
+		await session.applyAgentPersona(makePersona("beta", "HOW-beta"));
+		releaseGate();
+		await promptDone;
+
+		expect(afterName).toBe("beta");
 	});
 });
