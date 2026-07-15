@@ -12,14 +12,6 @@
 - **`activePersonaName` on `ExtensionContext`**: Live getter — always reflects the current active persona, not a snapshot taken at context creation time.
 - **`agent` field on `SessionMessageEntry`**: Active persona name stamped on all persisted entries — LLM responses, bash/python results, todo-command messages, and todo reminder injections. Optional; sessions without an active agent are unchanged.
 - **Session-resume persona restoration**: `/resume` and `--resume` infer the active agent from the last stamped message entry in the loaded session; falls back to the first primary agent when stamps are absent, the agent no longer exists on disk, or the stamp refers to a non-primary agent. An explicit `--agent` flag always takes precedence.
-
-### Fixed
-
-- Redacted agent persona names (`persona_change` entries and the `agent` stamp on message entries) in shared session snapshots when secret obfuscation is enabled.
-- Persona/model restore on session load now treats any forked session (`--fork`, `/fork`, `/tan`) as a continuation, not a fresh start, even when the parent session's own history is empty. Previously `hasExistingSession` looked only at copied entry count, so forking a history-less session (e.g. `--fork` against a subagent's session file) fell through to "cycle" mode and silently reset the model — discarding a caller-resolved model and, for forks that also inherit a provider prompt-cache key, clearing that key as collateral.
-
-### Added
-
 - Added per-agent prewalk for subagents: a `prewalk` frontmatter field (`true` = hand off to the default prewalk target, a string = custom target model pattern) and a `task.agentPrewalk` settings override toggled per agent from the `/agents` dashboard with `P`. The bundled generic `task` agent ships with prewalk enabled by default (skipped when the target resolves to the subagent's own starting model, and never armed for plan-mode spawns). Prewalk-armed subagents keep the normally parent-owned `todo` tool so the plan-nudge → todo → hand-off flow works, and the prewalk todo gate now keys on the active tool set instead of the registry so a deactivated todo tool can no longer stall the switch.
 
 ### Changed
@@ -29,6 +21,9 @@
 
 ### Fixed
 
+- Redacted agent persona names (`persona_change` entries and the `agent` stamp on message entries) in shared session snapshots when secret obfuscation is enabled.
+- Persona/model restore on session load now treats any forked session (`--fork`, `/fork`, `/tan`) as a continuation, not a fresh start, even when the parent session's own history is empty. Previously `hasExistingSession` looked only at copied entry count, so forking a history-less session (e.g. `--fork` against a subagent's session file) fell through to "cycle" mode and silently reset the model — discarding a caller-resolved model and, for forks that also inherit a provider prompt-cache key, clearing that key as collateral.
+- Gated automatic persona-model application on a fresh top-level session to `AgentDefinition.source` of `"bundled"` or `"user"` — a `"project"`-sourced primary (discovered from the repo, not chosen by the user) no longer silently swaps the active provider/model merely by being the default on `omp` startup. The persona's prompt/tools still apply via `mode: "restore"`; an explicit `--agent` flag or Tab cycle still applies the model regardless of source.
 - Fixed Bash internal URLs remaining unresolved when used as unquoted arguments inside command substitutions ([#5535](https://github.com/can1357/oh-my-pi/issues/5535)).
 - Fixed the built-in `fd` printing `fd: Broken pipe (os error 32)` when a downstream pipeline reader exited early (e.g. `fd … | head`); it now exits silently with 141 (128+SIGPIPE), matching real fd.
 - Fixed prewalk repeatedly continuing after a bash-only task such as `commit` had already completed ([#5551](https://github.com/can1357/oh-my-pi/issues/5551)).

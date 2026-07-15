@@ -7,6 +7,8 @@
  *   3. Fall back to the first primary when the stamped agent no longer exists on disk
  *   4. Prefer --agent flag over any stamp or default
  *   5. Skip subagent-mode agents entirely (only primary agents are eligible)
+ *   6. Never auto-apply a project-sourced persona's model on a fresh session —
+ *      only "bundled"/"user" sources (or an explicit --agent) may swap the model
  *
  * Tested by spying on discoverAgents so no agent files need to live on disk.
  */
@@ -25,6 +27,7 @@ function makeAgent(
 	mode: "primary" | "subagent" = "primary",
 	order?: number,
 	models?: string[],
+	source: AgentDefinition["source"] = "user",
 ): AgentDefinition {
 	return {
 		name,
@@ -32,7 +35,7 @@ function makeAgent(
 		systemPrompt: `You are ${name}.`,
 		mode,
 		order,
-		source: "user",
+		source,
 		tools: [],
 		...(models ? { model: models } : {}),
 	};
@@ -278,5 +281,43 @@ describe("createAgentSession — startup persona loading", () => {
 
 		// Explicit --agent overrides the sentinel.
 		expect(session.activePersonaName).toBe("alpha");
+	});
+
+	it("fresh session with a project-sourced default persona passes mode: 'restore' — does not auto-apply its model", async () => {
+		const sm = SessionManager.inMemory(); // no stamp — genuinely fresh
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"], "project")]);
+
+		// A project-sourced primary is discovered from the repo's own files, not
+		// chosen by the user — opening a checkout must not silently swap the
+		// user's model/provider. The persona prompt still applies via "restore".
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "restore" });
+	});
+
+	it("bundled- and user-sourced default personas still auto-apply their model on a fresh session", async () => {
+		for (const source of ["bundled", "user"] as const) {
+			const sm = SessionManager.inMemory();
+			const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+			await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"], source)]);
+
+			expect(spy).toHaveBeenCalledTimes(1);
+			expect(spy.mock.calls[0][1]).toMatchObject({ mode: "cycle" });
+			vi.restoreAllMocks();
+		}
+	});
+
+	it("explicit --agent still applies the model for a project-sourced persona", async () => {
+		const sm = SessionManager.inMemory();
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"], "project")], "alpha");
+
+		// Explicit --agent is informed user action — it overrides the source gate
+		// regardless of where the persona definition came from.
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "cycle" });
 	});
 });

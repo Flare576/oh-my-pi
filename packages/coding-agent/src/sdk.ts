@@ -3034,8 +3034,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				// copied over. Treat any forked session as non-fresh here so its
 				// caller-resolved model (already threaded through the normal
 				// fallback chain above) survives persona application undisturbed.
+				// A project-sourced default primary is discovered from the repo's own
+				// files, not chosen by the user — a bare checkout could ship
+				// `mode: primary` plus a `model:` pointing at another authenticated
+				// provider and silently reroute the user's main session merely by
+				// opening it. Only "bundled" (shipped with OMP) and "user" (the
+				// user's own ~/.omp/agent config) sources are trusted to auto-apply
+				// their model on a fresh session; a project-sourced persona still
+				// gets its prompt/tools applied via mode: "restore" below, just not
+				// an unsolicited provider/model swap. Explicit `--agent` always wins
+				// regardless of source — that's informed user action.
 				const isFork = session.sessionManager.getHeader()?.parentSession !== undefined;
-				const applyModel = (!hasExistingSession && !isFork) || !!namedAgent;
+				const applyModel = (!hasExistingSession && !isFork && startAgent.source !== "project") || !!namedAgent;
 				const { modelFailed } = await session.applyAgentPersona(startAgent, {
 					mode: applyModel ? "cycle" : "restore",
 				});
