@@ -3539,7 +3539,7 @@ export const SETTINGS_SCHEMA = {
 
 	"astGrep.enabled": {
 		type: "boolean",
-		default: true,
+		default: false,
 		ui: {
 			tab: "tools",
 			group: "Available Tools",
@@ -3591,6 +3591,16 @@ export const SETTINGS_SCHEMA = {
 			group: "Available Tools",
 			label: "Speech Generation",
 			description: "Enable the tts tool for on-device (Kokoro) or xAI Grok Voice speech-file synthesis",
+		},
+	},
+	"generate_image.enabled": {
+		type: "boolean",
+		default: true,
+		ui: {
+			tab: "tools",
+			group: "Available Tools",
+			label: "Generate Image",
+			description: "Enable the generate_image tool for text-to-image generation and editing",
 		},
 	},
 
@@ -4252,6 +4262,10 @@ export const SETTINGS_SCHEMA = {
 	},
 
 	"task.agentModelOverrides": {
+		type: "record",
+		default: {} as Record<string, string>,
+	},
+	"task.agentPrewalk": {
 		type: "record",
 		default: {} as Record<string, string>,
 	},

@@ -330,6 +330,8 @@ export interface AgentDefinition {
 	mode?: "primary" | "subagent";
 	/** Tab-cycle position. Lower = earlier. Agents without order sort alphabetically after all ordered agents. */
 	order?: number;
+	/** Prewalk hand-off for the spawned session: `true` = switch to the default prewalk target at the first edit/write, string = custom target model pattern. */
+	prewalk?: boolean | string;
 	source: AgentSource;
 	filePath?: string;
 }
