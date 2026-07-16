@@ -91,7 +91,6 @@ class LazyFakeSession {
 
 	setThinkingLevel(): void {}
 	setSlashCommands(): void {}
-	async refreshSshTool(): Promise<void> {}
 	async setModel(): Promise<void> {}
 	subscribe(): () => void {
 		return () => {};
