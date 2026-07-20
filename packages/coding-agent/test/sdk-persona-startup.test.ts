@@ -13,9 +13,11 @@
  * Tested by spying on discoverAgents so no agent files need to live on disk.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { Effort } from "@oh-my-pi/pi-ai";
+import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
+import { type CreateAgentSessionOptions, createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
@@ -66,7 +68,12 @@ describe("createAgentSession — startup persona loading", () => {
 		}
 	});
 
-	async function create(sessionManager: SessionManager, agents: AgentDefinition[], initialAgentName?: string) {
+	async function create(
+		sessionManager: SessionManager,
+		agents: AgentDefinition[],
+		initialAgentName?: string,
+		startupOptions: Pick<CreateAgentSessionOptions, "model" | "thinkingLevel"> = {},
+	) {
 		vi.spyOn(discovery, "discoverAgents").mockResolvedValue({
 			agents,
 			projectAgentsDir: null,
@@ -80,6 +87,7 @@ describe("createAgentSession — startup persona loading", () => {
 			skills: [],
 			contextFiles: [],
 			promptTemplates: [],
+			...startupOptions,
 			...(initialAgentName ? { initialAgentName } : {}),
 		});
 		sessions.push(session);
@@ -292,6 +300,39 @@ describe("createAgentSession — startup persona loading", () => {
 		// A project-sourced primary is discovered from the repo's own files, not
 		// chosen by the user — opening a checkout must not silently swap the
 		// user's model/provider. The persona prompt still applies via "restore".
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "restore" });
+	});
+
+	it("explicit model option on startup passes mode: 'restore' — does not auto-apply the persona's model", async () => {
+		const model = getBundledModel("cursor", "composer-1.5");
+		if (!model) throw new Error("Expected bundled Cursor model");
+
+		const sm = SessionManager.inMemory(); // no stamp — genuinely fresh
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5"], "bundled")], undefined, {
+			model,
+		});
+
+		// The caller explicitly selected this model before startup. The persona
+		// prompt still applies via "restore", but its frontmatter model must not
+		// overwrite the caller's model/provider selection.
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "restore" });
+	});
+
+	it("explicit thinking-level option on startup passes mode: 'restore' — does not auto-apply the persona's model", async () => {
+		const sm = SessionManager.inMemory(); // no stamp — genuinely fresh
+		const spy = vi.spyOn(AgentSession.prototype, "applyAgentPersona");
+
+		await create(sm, [makeAgent("alpha", "primary", 1, ["anthropic/claude-sonnet-4-5:high"], "bundled")], undefined, {
+			thinkingLevel: Effort.Low,
+		});
+
+		// The caller explicitly selected this thinking level before startup. The
+		// persona prompt still applies via "restore", but its model suffix must
+		// not overwrite the caller's thinking-level selection.
 		expect(spy).toHaveBeenCalledTimes(1);
 		expect(spy.mock.calls[0][1]).toMatchObject({ mode: "restore" });
 	});

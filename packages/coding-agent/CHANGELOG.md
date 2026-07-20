@@ -14,6 +14,10 @@
 - **Session-resume persona restoration**: `/resume` and `--resume` infer the active agent from the last stamped message entry in the loaded session; falls back to the first primary agent when stamps are absent, the agent no longer exists on disk, or the stamp refers to a non-primary agent. An explicit `--agent` flag always takes precedence.
 - Added per-agent prewalk for subagents: a `prewalk` frontmatter field (`true` = hand off to the default prewalk target, a string = custom target model pattern) and a `task.agentPrewalk` settings override toggled per agent from the `/agents` dashboard with `P`. The bundled generic `task` agent ships with prewalk enabled by default (skipped when the target resolves to the subagent's own starting model, and never armed for plan-mode spawns). Prewalk-armed subagents keep the normally parent-owned `todo` tool so the plan-nudge → todo → hand-off flow works, and the prewalk todo gate now keys on the active tool set instead of the registry so a deactivated todo tool can no longer stall the switch.
 
+### Fixed
+
+- Fixed the startup persona auto-load path silently overriding an explicitly-supplied `model` or `thinkingLevel` startup option with the default primary persona's own configured model/thinking level. Explicit startup parameters now always win, matching every other model-resolution fallback in `createAgentSession`.
+
 ## [17.0.5] - 2026-07-18
 
 ### Added

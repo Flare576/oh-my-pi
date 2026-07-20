@@ -3067,7 +3067,17 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				// an unsolicited provider/model swap. Explicit `--agent` always wins
 				// regardless of source — that's informed user action.
 				const isFork = session.sessionManager.getHeader()?.parentSession !== undefined;
-				const applyModel = (!hasExistingSession && !isFork && startAgent.source !== "project") || !!namedAgent;
+				// Explicit user-supplied startup params always win over persona
+				// defaults: `--model`/`model:` and `--thinking-level` are informed,
+				// deliberate choices made at process start — a persona's own
+				// frontmatter model/thinking level must never silently override
+				// them, regardless of --agent or source. See issue where an
+				// explicit `model:` option was clobbered by the auto-loaded
+				// default persona's configured model.
+				const applyModel =
+					!hasExplicitModel &&
+					options.thinkingLevel === undefined &&
+					((!hasExistingSession && !isFork && startAgent.source !== "project") || !!namedAgent);
 				const { modelFailed } = await session.applyAgentPersona(startAgent, {
 					mode: applyModel ? "cycle" : "restore",
 				});
