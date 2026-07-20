@@ -28,6 +28,7 @@ function createHandle(opts?: { newCwd?: string }) {
 
 	const ctx = {
 		clearTransientSessionUi: vi.fn(),
+		settings: { flush: vi.fn(async () => {}) },
 		session: {
 			switchSession,
 			settings: {

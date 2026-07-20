@@ -36,6 +36,7 @@ import {
 	assistantUsageIsBilled,
 	splitAssistantMessageToolTimeline,
 } from "../utils/transcript-render-helpers";
+import { isWarpCliAgentProtocolActive } from "../warp-events";
 import { StreamingRevealController } from "./streaming-reveal";
 import { streamingStringKeysForTool, ToolArgsRevealController } from "./tool-args-reveal";
 
@@ -250,7 +251,6 @@ export class EventController {
 		toolCallId: string,
 		result: { content: Array<{ type: string; data?: string; mimeType?: string }> },
 	): boolean {
-		if (!settings.get("terminal.showImages")) return false;
 		const assistantComponent = this.#readToolCallAssistantComponents.get(toolCallId);
 		if (!assistantComponent) return false;
 		const images: ImageContent[] = result.content
@@ -261,7 +261,7 @@ export class EventController {
 			.map(content => ({ type: "image", data: content.data, mimeType: content.mimeType }));
 		if (images.length === 0) return false;
 		assistantComponent.setToolResultImages(toolCallId, images);
-		return true;
+		return settings.get("terminal.showImages");
 	}
 
 	#insertAfterTranscriptComponent(anchor: Component | undefined, component: Component): boolean {
@@ -1567,6 +1567,10 @@ export class EventController {
 	sendCompletionNotification(): void {
 		const notify = settings.get("completion.notify");
 		if (notify === "off") return;
+
+		// Warp structured OSC 777 already drives native completion UX when the
+		// protocol is negotiated — avoid a second legacy desktop/OSC-9 toast.
+		if (isWarpCliAgentProtocolActive()) return;
 
 		// Skip when the turn was aborted (e.g. ask cancelled with Ctrl+C) or
 		// errored — those are not "Task complete" events. Mirrors the gate
