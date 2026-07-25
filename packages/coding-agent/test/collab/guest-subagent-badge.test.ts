@@ -69,6 +69,7 @@ function makeGuestContext(counts: number[]): InteractiveModeContext {
 		compactionQueuedMessages: [],
 		streamingComponent: undefined,
 		streamingMessage: undefined,
+		transcriptMessageComponents: new WeakMap(),
 		pendingTools: new Map(),
 		loadingAnimation: undefined,
 		statusLine: {
