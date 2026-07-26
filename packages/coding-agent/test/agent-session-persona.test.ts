@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
-import { Agent } from "@oh-my-pi/pi-agent-core";
+import { Agent, type AgentTool } from "@oh-my-pi/pi-agent-core";
 import { Effort } from "@oh-my-pi/pi-ai";
+import { createMockModel } from "@oh-my-pi/pi-ai/providers/mock";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { ExtensionRunner, loadExtensions } from "@oh-my-pi/pi-coding-agent/extensibility/extensions";
 import type { HookCommandContext } from "@oh-my-pi/pi-coding-agent/extensibility/hooks/types";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import type { AgentDefinition } from "@oh-my-pi/pi-coding-agent/task/types";
 import { TempDir } from "@oh-my-pi/pi-utils";
+import { type } from "arktype";
 
 /** Minimal AgentDefinition for persona tests — only the fields applyAgentPersona reads. */
 function makePersona(name: string, systemPrompt: string, order?: number): AgentDefinition {
@@ -666,5 +669,214 @@ describe("custom command context — activePersonaName liveness", () => {
 		await promptDone;
 
 		expect(afterName).toBe("beta");
+	});
+});
+
+// Regression coverage for the SessionTools/AgentSession field split
+// (upstream commit 7eeaba047 extracted system-prompt assembly into
+// `SessionTools`): `applyAgentPersona()` correctly primes `#personaBlock` and
+// the agent's system prompt once, but SessionTools owns three independent
+// `setSystemPrompt()` rebuild call sites (tool-set change, model/edit-mode
+// change, and the per-turn `buildSystemPromptForAgentStart` rebuild that runs
+// before every single turn) — none of which know the persona feature exists.
+// Every test below asserts the HOW block survives past the *next*
+// SessionTools-triggered rebuild, not just the moment applyAgentPersona() ran.
+describe("applyAgentPersona — persona block survives SessionTools-triggered rebuilds", () => {
+	let tempDir: TempDir;
+	let session: AgentSession;
+	const authStorages: AuthStorage[] = [];
+
+	beforeEach(() => {
+		tempDir = TempDir.createSync("@pi-persona-rebuild-");
+	});
+
+	afterEach(async () => {
+		vi.restoreAllMocks();
+		if (session) await session.dispose();
+		for (const as of authStorages.splice(0)) as.close();
+		tempDir.removeSync();
+	});
+
+	async function createDeps() {
+		const model = getBundledModel("anthropic", "claude-sonnet-4-5");
+		if (!model) throw new Error("claude-sonnet-4-5 not found in bundled models");
+		const authStorage = await AuthStorage.create(path.join(tempDir.path(), "auth.db"));
+		authStorages.push(authStorage);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		const modelRegistry = new ModelRegistry(authStorage, path.join(tempDir.path(), "models.yml"));
+		return { model, modelRegistry };
+	}
+
+	function createReadTool(): AgentTool {
+		return {
+			name: "read",
+			label: "read",
+			description: "read tool",
+			parameters: type({}),
+			async execute() {
+				return { content: [{ type: "text" as const, text: "read" }] };
+			},
+		};
+	}
+
+	it("survives a tool-set-changing action (setActiveToolPresentation)", async () => {
+		const { model, modelRegistry } = await createDeps();
+		const readTool = createReadTool();
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["initial"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+			toolRegistry: new Map([["read", readTool]]),
+			builtInToolNames: ["read"],
+			rebuildSystemPrompt: async toolNames => ({ systemPrompt: [`tools:${toolNames.sort().join(",")}`] }),
+		});
+
+		await session.applyAgentPersona(makePersona("sisyphus", "HOW-sisyphus"));
+		expect(session.systemPrompt).toEqual(["initial", "HOW-sisyphus"]);
+
+		await session.setActiveToolPresentation(["read"], []);
+
+		// The tool-set rebuild replaced the base ("initial" -> "tools:read");
+		// the persona's HOW block must still be the last thing in the prompt,
+		// not silently dropped by SessionTools' persona-agnostic rebuild.
+		expect(session.systemPrompt).toEqual(["tools:read", "HOW-sisyphus"]);
+		expect(session.activePersonaName).toBe("sisyphus");
+	});
+
+	it("survives a model-changing action (setModel)", async () => {
+		const { model, modelRegistry } = await createDeps();
+		const opus = getBundledModel("anthropic", "claude-opus-4-5");
+		if (!opus) throw new Error("claude-opus-4-5 not found in bundled models");
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["initial"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+			rebuildSystemPrompt: async () => ({ systemPrompt: ["rebuilt-for-new-model"] }),
+		});
+
+		await session.applyAgentPersona(makePersona("sisyphus", "HOW-sisyphus"));
+		expect(session.systemPrompt).toEqual(["initial", "HOW-sisyphus"]);
+
+		await session.setModel(opus, "default");
+
+		expect(session.systemPrompt).toEqual(["rebuilt-for-new-model", "HOW-sisyphus"]);
+		expect(session.activePersonaName).toBe("sisyphus");
+	});
+
+	it("survives a tool-set change AND a model change in the same session (acceptance contract)", async () => {
+		const { model, modelRegistry } = await createDeps();
+		const opus = getBundledModel("anthropic", "claude-opus-4-5");
+		if (!opus) throw new Error("claude-opus-4-5 not found in bundled models");
+		const readTool = createReadTool();
+		const agent = new Agent({
+			initialState: { model, systemPrompt: ["initial"], tools: [], messages: [], thinkingLevel: Effort.Low },
+		});
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated(),
+			modelRegistry,
+			toolRegistry: new Map([["read", readTool]]),
+			builtInToolNames: ["read"],
+			rebuildSystemPrompt: async toolNames => ({ systemPrompt: [`tools:${toolNames.sort().join(",")}`] }),
+		});
+
+		await session.applyAgentPersona(makePersona("sisyphus", "HOW-sisyphus"));
+		expect(session.systemPrompt.at(-1)).toBe("HOW-sisyphus");
+
+		await session.setActiveToolPresentation(["read"], []);
+		expect(session.systemPrompt.at(-1)).toBe("HOW-sisyphus");
+		expect(session.activePersonaName).toBe("sisyphus");
+
+		await session.setModel(opus, "default");
+		expect(session.systemPrompt.at(-1)).toBe("HOW-sisyphus");
+		expect(session.activePersonaName).toBe("sisyphus");
+	});
+
+	it("survives a plain per-turn rebuild with no memory-backend or extension override (the live regression)", async () => {
+		const { model, modelRegistry } = await createDeps();
+		const mock = createMockModel({ responses: [{ content: ["ok"] }] });
+		const agent = new Agent({
+			getApiKey: () => "test-key",
+			initialState: { model, systemPrompt: ["initial"], tools: [], messages: [] },
+			streamFn: mock.stream,
+		});
+		session = new AgentSession({
+			agent,
+			sessionManager: SessionManager.inMemory(),
+			settings: Settings.isolated({ "compaction.enabled": false, "memory.backend": "off" }),
+			modelRegistry,
+			// `buildSystemPromptForAgentStart` runs this on every turn even when
+			// nothing else changed — reproduces the exact live regression where
+			// this call site's result was force-applied without ever
+			// re-appending the persona block.
+			rebuildSystemPrompt: async () => ({ systemPrompt: ["initial"] }),
+		});
+
+		await session.applyAgentPersona(makePersona("sisyphus", "HOW-sisyphus"));
+		expect(session.systemPrompt).toEqual(["initial", "HOW-sisyphus"]);
+
+		await session.prompt("hello, who are you?");
+
+		expect(session.systemPrompt).toEqual(["initial", "HOW-sisyphus"]);
+		expect(session.activePersonaName).toBe("sisyphus");
+		// The actual wire payload sent to the model must carry the HOW block too —
+		// not just the session's own bookkeeping.
+		expect(mock.calls[0]?.context.systemPrompt).toEqual(["initial", "HOW-sisyphus"]);
+	});
+
+	it("survives a memory-backend-style per-turn systemPrompt override from an extension", async () => {
+		const { model, modelRegistry } = await createDeps();
+		const sessionManager = SessionManager.inMemory();
+		const extensionsResult = await loadExtensions([], tempDir.path());
+		const extensionRunner = new ExtensionRunner(
+			extensionsResult.extensions,
+			extensionsResult.runtime,
+			tempDir.path(),
+			sessionManager,
+			modelRegistry,
+		);
+		// Simulates a memory-backend-style (or any other) `before_agent_start`
+		// handler that replaces the turn's system prompt wholesale — exactly
+		// the shape SessionTools' own one-turn memory injection produces.
+		vi.spyOn(extensionRunner, "emitBeforeAgentStart").mockResolvedValueOnce({
+			systemPrompt: ["memory-injected-turn-prompt"],
+		});
+		vi.spyOn(extensionRunner, "emit").mockResolvedValue(undefined);
+
+		const mock = createMockModel({ responses: [{ content: ["ok"] }] });
+		const agent = new Agent({
+			getApiKey: () => "test-key",
+			initialState: { model, systemPrompt: ["initial"], tools: [], messages: [] },
+			streamFn: mock.stream,
+		});
+		session = new AgentSession({
+			agent,
+			sessionManager,
+			settings: Settings.isolated({ "compaction.enabled": false, "memory.backend": "off" }),
+			modelRegistry,
+			extensionRunner,
+		});
+
+		await session.applyAgentPersona(makePersona("sisyphus", "HOW-sisyphus"));
+		expect(session.systemPrompt).toEqual(["initial", "HOW-sisyphus"]);
+
+		await session.prompt("hello");
+
+		// The one-turn override must not silently strip the HOW block — both the
+		// session's own state and the actual wire payload sent to the model must
+		// still carry it, appended after the override content (not the stale
+		// pre-override base).
+		expect(session.systemPrompt).toEqual(["memory-injected-turn-prompt", "HOW-sisyphus"]);
+		expect(session.activePersonaName).toBe("sisyphus");
+		expect(mock.calls[0]?.context.systemPrompt).toEqual(["memory-injected-turn-prompt", "HOW-sisyphus"]);
 	});
 });

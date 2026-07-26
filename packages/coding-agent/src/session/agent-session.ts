@@ -4990,8 +4990,16 @@ export class AgentSession {
 			await this.#memory.transition;
 			if ((this.#isDisposed && !disposingBeforeTransition) || this.#promptGeneration !== generation) return;
 			const beforeAgentStartSystemPrompt = await this.#buildSystemPromptForAgentStart(expandedText);
-
-			// Emit before_agent_start extension event
+			// Emit before_agent_start extension event. `beforeAgentStartSystemPrompt`
+			// (SessionTools) and any extension's `result.systemPrompt` override are
+			// both persona-agnostic by design — SessionTools has no persona
+			// awareness, and extensions must not be able to silently strip the
+			// active persona's HOW block. Compute the turn's system prompt from
+			// whichever of those applies, apply it once, then re-append the active
+			// persona block (matching the same reapplication used after a
+			// tool/model-change rebuild) so it survives every turn, not just the
+			// moment applyAgentPersona() ran.
+			let turnSystemPrompt = beforeAgentStartSystemPrompt;
 			if (this.#extensionRunner) {
 				const result = await this.#extensionRunner.emitBeforeAgentStart(
 					expandedText,
@@ -5025,13 +5033,11 @@ export class AgentSession {
 				}
 
 				if (result?.systemPrompt !== undefined) {
-					this.agent.setSystemPrompt(result.systemPrompt);
-				} else {
-					this.agent.setSystemPrompt(beforeAgentStartSystemPrompt);
+					turnSystemPrompt = result.systemPrompt;
 				}
-			} else {
-				this.agent.setSystemPrompt(beforeAgentStartSystemPrompt);
 			}
+			this.agent.setSystemPrompt(turnSystemPrompt);
+			this.#reapplyPersonaBlock(turnSystemPrompt);
 
 			// Bail out if a newer abort/prompt cycle has started since we began setup
 			if (this.#promptGeneration !== generation) {
@@ -6338,10 +6344,21 @@ export class AgentSession {
 		return !modelApplied && modelFailed !== undefined ? { modelFailed } : {};
 	}
 
-	/** Re-appends the active persona's system-prompt block after the base prompt is rebuilt (tool changes, model switches). No-op when no persona is active. */
-	#reapplyPersonaBlock(): void {
+	/**
+	 * Re-appends the active persona's system-prompt block after the base prompt
+	 * is rebuilt (tool changes, model switches) or after a one-turn override is
+	 * applied (memory-backend turn-start injection, an extension's
+	 * `before_agent_start` systemPrompt override). No-op when no persona is
+	 * active.
+	 *
+	 * Defaults to the current persistent base (`#tools.baseSystemPrompt`) for
+	 * the tool/model-change call sites, which rebuild that base directly. Turn-
+	 * scoped callers that computed a one-off variant of it (memory injection,
+	 * extension override) MUST pass that variant explicitly — reapplying onto
+	 * the default would silently discard their one-turn addition.
+	 */
+	#reapplyPersonaBlock(base: string[] = this.#tools.baseSystemPrompt): void {
 		if (this.#personaBlock === null) return;
-		const base = this.#tools.baseSystemPrompt;
 		if (base[base.length - 1] !== this.#personaBlock) {
 			this.agent.setSystemPrompt([...base, this.#personaBlock]);
 		}

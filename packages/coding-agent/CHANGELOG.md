@@ -17,6 +17,7 @@
 ### Fixed
 
 - Fixed the startup persona auto-load path silently overriding an explicitly-supplied `model` or `thinkingLevel` startup option with the default primary persona's own configured model/thinking level. Explicit startup parameters now always win, matching every other model-resolution fallback in `createAgentSession`.
+- Fixed the active persona's identity block (the HOW block `applyAgentPersona()` sets) being silently dropped by any later system-prompt rebuild — a tool-set change, a model/edit-mode change, and, most impactfully, the per-turn rebuild that runs before every single turn via `buildSystemPromptForAgentStart`, which force-applied its persona-agnostic result (and any extension's `before_agent_start` `systemPrompt` override) straight onto the agent on every turn regardless of memory-backend configuration, with no trace left in the persisted session log since `persona_change` bookkeeping and per-message `agent` stamps were never touched. Introduced when upstream commit 7eeaba047 extracted system-prompt assembly from `AgentSession` into `SessionTools`, which by design has no persona awareness. `AgentSession` now re-appends the active `#personaBlock` after the per-turn system prompt (and any extension override) is applied, mirroring the `onSystemPromptRebuild` reapplication already used for tool/model-change rebuilds, so the active persona's identity survives every turn, not just the moment it was selected.
 
 ## [17.1.3] - 2026-07-24
 
