@@ -54,6 +54,8 @@ export interface SessionToolsHost {
 	emitNotice(level: "info" | "warning" | "error", message: string, source?: string): void;
 	notifyCommandMetadataChanged(): void;
 	localProtocolOptions(): LocalProtocolOptions;
+	/** Called after the base system prompt is rebuilt and applied, so the owning session can re-append its own trailing blocks (e.g. an active persona's prompt). */
+	onSystemPromptRebuild?(): void;
 }
 
 interface SessionToolsOptions {
@@ -525,6 +527,7 @@ export class SessionTools {
 			this.#baseSystemPrompt = rebuiltSystemPrompt;
 			this.#host.clearMemoryPromotionSnapshot();
 			this.#host.agent.setSystemPrompt(this.#baseSystemPrompt);
+			this.#host.onSystemPromptRebuild?.();
 			this.#lastAppliedToolSignature = rebuiltSignature;
 			this.#promptModelKey = this.#currentPromptModelKey();
 		}
@@ -750,6 +753,7 @@ export class SessionTools {
 			this.#host.clearInheritedProviderPromptCacheKey();
 		}
 		this.#host.agent.setSystemPrompt(this.#baseSystemPrompt);
+		this.#host.onSystemPromptRebuild?.();
 		this.#promptModelKey = this.#currentPromptModelKey();
 		// Refresh the cached signature so a subsequent `applyActiveToolsByName` with
 		// the same tool set does not re-rebuild on top of the explicit refresh we

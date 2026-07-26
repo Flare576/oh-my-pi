@@ -24,6 +24,7 @@ import type { ContextUsage } from "../extensibility/extensions/types";
 import type { Skill, SkillWarning } from "../extensibility/skills";
 import type { FileSlashCommand } from "../extensibility/slash-commands";
 import type { SecretObfuscator } from "../secrets/obfuscator";
+import type { AgentDefinition, PersonaStamp } from "../task/types";
 import type { ConfiguredThinkingLevel } from "../thinking";
 import type { XdevRegistry } from "../tools/xdev";
 import type { SessionManager } from "./session-manager";
@@ -212,6 +213,14 @@ export interface AgentSessionConfig {
 	advisorContextPrompt?: string;
 	/** Advisors discovered from WATCHDOG.yml. */
 	advisorConfigs?: AdvisorConfig[];
+	/**
+	 * Optional resolver called by switchSession() after loading a session to restore the
+	 * active persona. Receives the last persisted persona name (from getLastAgentName())
+	 * and the session's cwd; must return the AgentDefinition to apply (or null for none).
+	 * When absent, switchSession() leaves the active persona unchanged — callers must
+	 * handle restoration themselves or accept the stale persona.
+	 */
+	resolvePersona?: (name: PersonaStamp, cwd: string) => Promise<AgentDefinition | null>;
 	/** Strip tool descriptions from provider-bound side-request tool specs. */
 	pruneToolDescriptions?: boolean;
 	/** Disconnect the MCP manager owned by this session during disposal. */
