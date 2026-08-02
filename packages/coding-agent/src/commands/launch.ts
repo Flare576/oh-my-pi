@@ -102,6 +102,12 @@ export default class Index extends Command {
 		agent: Flags.string({
 			description: "Load a named agent persona at startup (must have mode: primary in its frontmatter)",
 		}),
+		"from-claude": Flags.boolean({
+			description: "Import a Claude Code session into OMP",
+		}),
+		"from-codex": Flags.boolean({
+			description: "Import a Codex session into OMP",
+		}),
 		"session-dir": Flags.string({
 			description: "Directory for session storage and lookup",
 		}),

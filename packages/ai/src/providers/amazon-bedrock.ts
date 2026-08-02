@@ -29,7 +29,7 @@ import type {
 	ToolCall,
 	ToolResultMessage,
 } from "../types";
-import { normalizeToolCallId, resolveCacheRetention } from "../utils";
+import { normalizeSystemPrompts, normalizeToolCallId, resolveCacheRetention } from "../utils";
 import {
 	clearStreamingPartialJson,
 	kStreamingBlockIndex,
@@ -752,10 +752,10 @@ function supportsThinkingSignature(model: Model<"bedrock-converse-stream">): boo
 }
 
 function buildSystemPrompt(
-	systemPrompt: readonly string[] | undefined,
+	systemPrompt: readonly string[] | string | undefined,
 	promptCachePolicy: BedrockPromptCachePolicy,
 ): SystemContent[] | undefined {
-	const prompts = systemPrompt?.map(prompt => prompt.toWellFormed()).filter(prompt => prompt.length > 0) ?? [];
+	const prompts = normalizeSystemPrompts(systemPrompt);
 	if (prompts.length === 0) return undefined;
 
 	const blocks: SystemContent[] = prompts.map(prompt => ({ text: prompt }));
@@ -830,10 +830,9 @@ function convertMessages(
 						case "thinking":
 							// Skip empty thinking blocks
 							if (c.thinking.trim().length === 0) continue;
-							// Thinking blocks require a valid signature when sent as reasoningContent.
-							// If the signature is missing (e.g., from an aborted stream), or the model
-							// doesn't support signatures, convert to plain text instead.
-							if (supportsThinkingSignature(model) && c.thinkingSignature) {
+							// A captured signature is authoritative even when the model id is an opaque ARN.
+							// Without one, known non-Claude families use unsigned reasoning; known Claude ids demote to text.
+							if (c.thinkingSignature) {
 								contentBlocks.push({
 									reasoningContent: {
 										reasoningText: { text: c.thinking.toWellFormed(), signature: c.thinkingSignature },

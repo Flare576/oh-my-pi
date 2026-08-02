@@ -46,7 +46,7 @@ omp config set computer.enabled true
 omp config get computer.enabled
 ```
 
-Inside a running session, the `/computer` slash command (`/computer`, `/computer on|off|status`) toggles the tool for that session only; it never writes settings files. Backend, display, and image-size settings still snapshot when the session's desktop controller is created, so change those in config and start a new session.
+Inside a running session, the `/computer` slash command (`/computer`, `/computer on|off|status`) toggles the tool for that session only; it never writes settings files. `/computer status` reports the effective enabled/active state, backend, display and capture limits, active model, and whether that model receives native or function exposure. Explicit enablement and the desktop controller stay active across model switches; exposure is recomputed for the new model, and a switch that crosses the coordinate-safe sizing boundary recreates the controller and resnapshots backend/display/image-size settings. Changing config alone does not; start a new session after a settings change.
 
 ### Settings
 
@@ -55,8 +55,8 @@ Inside a running session, the `/computer` slash command (`/computer`, `/computer
 | `computer.enabled` | `false` | Register the essential `computer` tool. |
 | `computer.backend` | `auto` | `auto` or `native`. Both require a native backend; neither falls back to browser or software automation. |
 | `computer.display` | `all` | Composite every active display, or select one numeric native display ID. |
-| `computer.maxWidth` | `1920` | Maximum composite screenshot width in pixels. Must be greater than zero. |
-| `computer.maxHeight` | `1200` | Maximum composite screenshot height in pixels. Must be greater than zero. |
+| `computer.maxWidth` | `1920` | Maximum composite screenshot width in pixels. Image transports that cannot preserve original detail, including GitHub Copilot Responses and xAI OAuth, cap the effective width at `1280`; Claude-family models use the same cap as a compatibility fallback. |
+| `computer.maxHeight` | `1200` | Maximum composite screenshot height in pixels. Those coordinate-safe transports cap the effective height at `896`; other models retain the configured limit. |
 
 The first successful result lists each display ID, name, logical rectangle, screenshot-pixel rectangle, scale, and primary status. Use one of those IDs as a string when you want a single display:
 
@@ -74,11 +74,14 @@ Models with native OpenAI GA computer-use support receive the wire declaration `
 OMP marks a model natively capable when either:
 
 - its catalog metadata explicitly sets `supportsComputerUse: true`, or
-- it uses `openai-responses`, `openai-codex-responses`, or `azure-openai-responses` and resolves to an OpenAI/OpenAI Codex or Azure model ID matching `gpt-5.4` or later in the `gpt-5.x` family.
+- it uses a direct OpenAI Responses or Azure OpenAI Responses endpoint and resolves to a model ID matching `gpt-5.4` or later in the `gpt-5.x` family.
 
-An explicit `supportsComputerUse: false` disables automatic derivation and routes the model through the function-tool form.
+Codex subscription endpoints and custom or proxy routes do not infer native support from the model ID. They receive the regular `computer` function tool unless catalog metadata explicitly opts into the GA contract. An explicit `supportsComputerUse: false` also disables automatic derivation.
 
-Natively capable OpenAI Responses routes may receive a forced `{ "type": "computer" }` choice. Function-tool fallback forcing is provider-specific: OpenAI/Ollama use a named function, Anthropic/Bedrock use a named tool, Google uses required-tool mode, and adapters without a forcing form keep provider-default selection. When native computer history is replayed to a non-native OpenAI Responses-family model, that adapter converts prior `computer_call` and `computer_call_output` items into stable text notes rather than sending invalid native items. Other provider adapters serialize the generic call and result through their ordinary tool format.
+Natively capable OpenAI Responses routes may receive a forced `{ "type": "computer" }` choice. Function-tool fallback forcing is provider-specific: OpenAI/Ollama use a named function, Anthropic/Bedrock use a named tool, Google uses required-tool mode, and adapters without a forcing form keep provider-default selection. Responses Lite moves tools into `additional_tools`; for an explicitly forced computer declaration it sends only that declaration and uses `tool_choice: "required"`, preserving both selection and forcing without an invalid object choice that refers to removed top-level tools.
+
+When a session switches from a native-capable API route to a subscription or proxy route, prior native computer history is converted to a representation the target accepts. Codex subscription requests replay it as named `computer` function calls and results, then declare the next computer call as the same named function. Other non-native OpenAI Responses-family targets may use stable assistant text notes; other provider adapters use their ordinary tool format.
+While the tool is active, the system prompt makes host-desktop routing explicit even for compact native-tool inventories: desktop requests must use `computer`, and every successful action must be followed by inspection of its fresh screenshot before the next action. This does not auto-enable the tool, bypass approval, or prevent a user-requested alternative after a computer error.
 
 If the tool never appears:
 
@@ -107,14 +110,14 @@ A batch containing only `screenshot` and `wait` is observation-only. Any click, 
 
 ## Screenshot coordinates and image mapping
 
-Always choose coordinates from the immediately preceding successful computer result. Every coordinate action in one batch maps through that same prior frame. Do not use OS logical coordinates, CSS pixels, terminal cell positions, coordinates copied from another screenshot, or an in-batch `screenshot` marker as a new frame.
+Always choose coordinates from the immediately preceding successful computer result returned by the current desktop controller. Every coordinate action in one batch maps through that same prior frame. A model switch that crosses the coordinate-safe sizing boundary recreates the controller and invalidates the prior frame, so capture a fresh screenshot before the next coordinate action. Do not use OS logical coordinates, CSS pixels, terminal cell positions, coordinates copied from another screenshot, or an image resized after capture.
 
 For each capture, OMP:
 
 1. Enumerates the selected native displays and their global logical rectangles.
 2. Captures every selected display at native pixel density.
 3. Builds one logical bounding rectangle, including negative monitor origins.
-4. Chooses one render scale that preserves the desktop layout and stays within `maxWidth` and `maxHeight`.
+4. Chooses one render scale that preserves the desktop layout and stays within the configured `maxWidth` and `maxHeight` limits. Image transports that cannot preserve original detail, including GitHub Copilot Responses and xAI OAuth, additionally cap the effective frame at `1280×896`; Claude-family models use the same cap as a compatibility fallback, and other providers retain the configured limits.
 5. Places each resized display image into the composite and returns a PNG.
 
 Each result's `displays` metadata maps both spaces:
@@ -141,7 +144,7 @@ Use one display when:
 - a layout gap makes targets ambiguous; or
 - you want to isolate sensitive content on another monitor.
 
-On Linux, Wayland sessions are captured and driven through XWayland: `DISPLAY` must point at the XWayland server, capture reads the X11 composite, and input is emitted as XTest events in the same X11 global coordinate space, so multi-display coordinate mapping is exact. Whether that input reaches native Wayland windows depends on the compositor's XWayland input bridging (modern GNOME and KDE support it).
+On Linux, capture reads the X11 root window with core `GetImage` and input is emitted as XTest events in the same X11 global coordinate space, so multi-display coordinate mapping is exact. This requires an X server that owns a readable root pixmap — a real X11 session, Xvfb, or a rootful XWayland (`Xwayland -rootful`). The default **rootless** XWayland used by GNOME, KDE, and sway keeps no X11 root pixmap, so root `GetImage` fails; the tool detects this at initialization and reports `DESKTOP_BACKEND_UNAVAILABLE` instead of failing on the first screenshot. Pure Wayland capture (portal/PipeWire) is not implemented.
 
 ## Approval and safety precedence
 
@@ -191,7 +194,7 @@ See [Tool approval mode](./approval-mode.md) for general policy resolution.
 |---|---|---|
 | macOS x64/arm64 | Bounded macOS `screencapture` service capture; Quartz/CGEvent and native input | Supported. Grant Screen Recording and Accessibility. Real remote desktop execution was verified on Apple hardware; see [Verification boundary](#verification-boundary). |
 | Linux x64/arm64, glibc/musl, X11 | Pure-Rust X11 capture and XTest input (`x11rb`), bundled in the core addon | Supported when a graphical session and `DISPLAY` are available. No GUI system libraries are required; the backend speaks the X protocol directly over the display socket. Requires the RandR and XTEST server extensions. |
-| Linux x64/arm64, glibc/musl, Wayland | XWayland capture; XTest input bridged by the compositor | Supported with an active XWayland `DISPLAY`. Pure Wayland capture (portal/PipeWire) is not implemented. Input delivery to native Wayland windows depends on the compositor's XWayland input bridge. |
+| Linux x64/arm64, glibc/musl, Wayland | XWayland capture; XTest input bridged by the compositor | **Unsupported on the default rootless XWayland** (GNOME/KDE/sway): its root window has no readable pixmap, so root `GetImage` fails and the tool reports `DESKTOP_BACKEND_UNAVAILABLE` at initialization. Capture needs a rooted X server (a real X11 session, Xvfb, or a rootful `Xwayland -rootful`), which exposes only X11 clients — native Wayland windows are invisible to X11. Pure Wayland capture (portal/PipeWire) is not implemented. |
 | Windows x64 | xcap capture; Win32 virtual-desktop pointer movement and native input | Implemented, including negative origins and secondary monitors. Not remotely exercised in this feature's verification. |
 | Other OS/architectures | none | Unsupported by the published native package matrix. |
 
@@ -211,8 +214,8 @@ For X11, run OMP inside the target graphical session and ensure `DISPLAY` identi
 
 For Wayland:
 
-- keep XWayland enabled and ensure `DISPLAY` is set; capture and input both go through it; and
-- use a compositor that bridges XWayland XTest input to native windows (modern GNOME and KDE do).
+- capture goes through XWayland, which can only read a **rooted** X server's root pixmap; the default rootless XWayland (GNOME/KDE/sway) has none, so capture fails at initialization with `DESKTOP_BACKEND_UNAVAILABLE`; and
+- even a rooted/rootful XWayland exposes only X11 clients — native Wayland windows are structurally invisible to X11 — and pure Wayland capture (portal/PipeWire) is not implemented, so Wayland desktops have no usable capture path today.
 
 The desktop backend is always bundled in the core `pi-natives` addon on every published Linux target (x64/arm64, glibc/musl). It opens no display connection until the tool runs, so headless hosts are unaffected; without a reachable X server the tool reports `DESKTOP_BACKEND_UNAVAILABLE`.
 
@@ -266,6 +269,7 @@ Computer backend errors begin with a stable code:
 Common exact failures:
 
 - `Wayland sessions require an active XWayland DISPLAY for native capture and input; pure Wayland capture is unavailable` → enable XWayland or use X11.
+- `X11 root window is not a readable drawable; this is a rootless XWayland session …` → the compositor keeps no X11 root pixmap (the GNOME/KDE/sway default), so no capture path exists on this session; use a native X11 session. Portal/PipeWire capture is not implemented.
 - `X11/x11rb XTest absolute input cannot represent negative global desktop coordinates` → select a display whose origin is non-negative.
 - `X11/x11rb XTest absolute input is limited to global coordinates in 0..=32767` → select one display or a smaller layout.
 - `native action deadline exceeded; remaining batch actions were not executed` → split the batch into smaller calls and take a fresh screenshot.
@@ -285,7 +289,7 @@ The native composite safety ceiling is 268,435,456 pixels. Normal defaults are f
 - Coordinate targets are valid only for the preceding frame and current display layout.
 - Screenshot composites may downscale small text to fit configured limits.
 - Gaps are visible but not valid input targets; overlapping non-mirrored layouts fail closed.
-- Pure Wayland capture currently requires XWayland; the portal/PipeWire capture path is not implemented.
+- Wayland capture works only under a rooted/rootful XWayland that owns a readable root pixmap and exposes X11 clients; the default rootless XWayland (GNOME/KDE/sway) has no capturable root and the portal/PipeWire path is not implemented, so native Wayland desktops are unsupported for capture.
 - On Wayland, XTest input reaching native windows depends on the compositor's XWayland input bridge.
 - Linux coordinate input fails closed for negative global display origins; select a display whose origin is non-negative.
 - X11/XTest coordinate input is limited to global positions through 32767 on each axis.

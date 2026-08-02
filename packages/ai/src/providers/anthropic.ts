@@ -2,7 +2,8 @@ import * as nodeCrypto from "node:crypto";
 import * as fs from "node:fs";
 import { scheduler } from "node:timers/promises";
 import * as tls from "node:tls";
-import { isOfficialAnthropicApiUrl } from "@oh-my-pi/pi-catalog/compat/anthropic";
+import { isAnthropicSigningProxyUrl, isOfficialAnthropicApiUrl } from "@oh-my-pi/pi-catalog/compat/anthropic";
+import { hostMatchesUrl, isVertexRawPredictUrl } from "@oh-my-pi/pi-catalog/hosts";
 import { mapEffortToAnthropicAdaptiveEffort } from "@oh-my-pi/pi-catalog/model-thinking";
 import { calculateCost, getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { isAnthropicOAuthToken } from "@oh-my-pi/pi-catalog/utils";
@@ -59,18 +60,18 @@ import { isFoundryEnabled } from "../utils/foundry";
 import { finalizeErrorMessage, type RawHttpRequestDump } from "../utils/http-inspector";
 import { getStreamFirstEventTimeoutMs, getStreamIdleTimeoutMs, iterateWithIdleTimeout } from "../utils/idle-iterator";
 import { notifyProviderResponse } from "../utils/provider-response";
+import { getHeadersFromError, getRetryAfterMsFromHeaders } from "../utils/retry-after";
 import { COMBINATOR_KEYS, NO_STRICT, toolWireSchema } from "../utils/schema";
 import { spillToDescription } from "../utils/schema/spill";
 import { createSdkStreamRequestOptions } from "../utils/sdk-stream-timeout";
 import { notifyRawSseEvent } from "../utils/sse-debug";
+import { isForcedToolChoice } from "../utils/tool-choice";
 import {
-	AnthropicApiError,
 	AnthropicConnectionTimeoutError,
 	type AnthropicFetchOptions,
 	AnthropicMessagesClient,
 	type AnthropicMessagesClientLike,
 	calculateAnthropicRetryDelayMs,
-	retryDelayFromHeaders,
 } from "./anthropic-client";
 import {
 	type ToolInputSchema as AnthropicToolInputSchema,
@@ -85,10 +86,18 @@ import {
 	type TextBlockParam,
 } from "./anthropic-wire";
 import {
+	CLAUDE_CODE_MAX_OUTPUT_TOKENS,
+	claudeCodeSystemInstruction,
+	claudeCodeVersion,
+	claudeToolPrefix,
+	coworkUserAgent,
+} from "./claude-code-fingerprint";
+import {
 	buildCopilotDynamicHeaders,
 	hasCopilotVisionInput,
 	resolveGitHubCopilotBaseUrl,
 } from "./github-copilot-headers";
+import { getOpenAIPromptCacheKey } from "./openai-shared";
 import { transformMessages } from "./transform-messages";
 import { NON_VISION_IMAGE_PLACEHOLDER } from "./vision-guard";
 
@@ -101,7 +110,7 @@ export type AnthropicHeaderOptions = {
 	modelHeaders?: Record<string, string>;
 	isCloudflareAiGateway?: boolean;
 	claudeCodeSessionId?: string;
-	claudeCodeBetas?: readonly string[];
+	coworkBetas?: readonly string[];
 	/** Allow explicit fingerprint headers to replace OAuth defaults on non-official endpoints. */
 	allowAnthropicHeaderOverrides?: boolean;
 };
@@ -129,55 +138,70 @@ export function buildBetaHeader(baseBetas: readonly string[], extraBetas: readon
 	return result.join(",");
 }
 
+/**
+ * Merge an extra Anthropic beta into a caller-provided `anthropic-beta` header,
+ * preserving the caller's key casing and deduping the tokens. Returns a
+ * single-entry header record for a per-request `headers` override — used to
+ * attach a required beta to injected SDK clients that bypass the client-level
+ * beta construction.
+ */
+function mergeAnthropicBetaHeader(callerHeaders: Record<string, string>, beta: string): Record<string, string> {
+	for (const key in callerHeaders) {
+		if (key.toLowerCase() === "anthropic-beta") {
+			return { [key]: buildBetaHeader(normalizeExtraBetas(callerHeaders[key]), [beta]) };
+		}
+	}
+	return { "anthropic-beta": beta };
+}
+
 const midConversationSystemBeta = "mid-conversation-system-2026-04-07";
 const contextManagementBeta = "context-management-2025-06-27";
 const structuredOutputsBeta = "structured-outputs-2025-12-15";
-const claudeCodeUtilityBetaDefaults = [
-	"oauth-2025-04-20",
+const thinkingTokenCountBeta = "thinking-token-count-2026-05-13";
+const fallbackCreditBeta = "fallback-credit-2026-06-01";
+const coworkUtilityBetaDefaults = [
 	"interleaved-thinking-2025-05-14",
+	thinkingTokenCountBeta,
 	contextManagementBeta,
 	"prompt-caching-scope-2026-01-05",
 	structuredOutputsBeta,
 ] as const;
-const claudeCodeAgentBetaDefaults = [
+const coworkAgentBetaDefaults = [
 	"claude-code-20250219",
-	"oauth-2025-04-20",
 	"interleaved-thinking-2025-05-14",
+	thinkingTokenCountBeta,
 	contextManagementBeta,
 	"prompt-caching-scope-2026-01-05",
 	midConversationSystemBeta,
 	"advanced-tool-use-2025-11-20",
 ] as const;
 const extendedCacheTtlBeta = "extended-cache-ttl-2025-04-11";
-const claudeCodeAgentPostEffortBetas = [extendedCacheTtlBeta] as const;
 const fineGrainedToolStreamingBeta = "fine-grained-tool-streaming-2025-05-14";
 const interleavedThinkingBeta = "interleaved-thinking-2025-05-14";
-// Asks the API to redact thinking blocks from responses. Only sent when the
-// caller explicitly hides thinking (`thinkingDisplay: "omitted"`); sending it
-// by default suppresses the thinking traces callers expect to stream.
-const redactThinkingBeta = "redact-thinking-2026-02-12";
 const fastModeBeta = "fast-mode-2026-02-01";
 const taskBudgetBeta = "task-budgets-2026-03-13";
 const effortBeta = "effort-2025-11-24";
 const serverSideFallbackBeta = "server-side-fallback-2026-06-01";
 
-function buildClaudeCodeBetas(
+function buildCoworkBetas(
 	agentRequest: boolean,
 	thinkingRequest: boolean,
-	redactThinking: boolean,
 	disableStrictTools = false,
 ): readonly string[] {
-	if (!agentRequest && !redactThinking && !disableStrictTools) return claudeCodeUtilityBetaDefaults;
+	// `context-1m-2025-08-07` is intentionally never advertised. OAuth
+	// subscription credentials have no long-context credit balance, so Anthropic
+	// hard-429s ("Usage credits are required for long context requests") on any
+	// beta-gated 1M model regardless of prompt size (#7238). Natively-1M models
+	// (e.g. claude-sonnet-5) serve their full window without the beta anyway.
+	if (!agentRequest && !disableStrictTools) return coworkUtilityBetaDefaults;
 	const betas: string[] = [];
-	for (const beta of agentRequest ? claudeCodeAgentBetaDefaults : claudeCodeUtilityBetaDefaults) {
+	for (const beta of agentRequest ? coworkAgentBetaDefaults : coworkUtilityBetaDefaults) {
 		if (disableStrictTools && beta === structuredOutputsBeta) continue;
 		betas.push(beta);
-		// Match CC's header order: redact-thinking immediately follows interleaved-thinking.
-		if (redactThinking && beta === interleavedThinkingBeta) betas.push(redactThinkingBeta);
 	}
 	if (!agentRequest) return betas;
 	if (thinkingRequest) betas.push(effortBeta);
-	betas.push(...claudeCodeAgentPostEffortBetas);
+	betas.push(fallbackCreditBeta);
 	return betas;
 }
 
@@ -220,11 +244,10 @@ export function buildAnthropicHeaders(options: AnthropicHeaderOptions): Record<s
 	const incomingUserAgent = getHeaderCaseInsensitive(options.modelHeaders, "User-Agent");
 	const incomingAuthorization = getHeaderCaseInsensitive(options.modelHeaders, "Authorization");
 	const incomingApiKey = getHeaderCaseInsensitive(options.modelHeaders, "X-Api-Key");
-	// Claude Code betas (oauth-2025-04-20, claude-code-20250219, …) are part of
-	// the OAuth fingerprint; API-key requests default to extras only, matching
-	// the streaming path (buildAnthropicClientOptions passes [] for non-OAuth).
+	// Cowork's beta profile is part of the OAuth fingerprint; API-key requests
+	// default to extras only, matching the streaming path.
 	const betaHeader = buildBetaHeader(
-		options.claudeCodeBetas ?? (oauthToken ? buildClaudeCodeBetas(true, true, false) : []),
+		options.coworkBetas ?? (oauthToken ? buildCoworkBetas(true, true) : []),
 		extraBetas,
 	);
 	const acceptHeader = oauthToken ? "application/json" : stream ? "text/event-stream" : "application/json";
@@ -282,19 +305,22 @@ export function buildAnthropicHeaders(options: AnthropicHeaderOptions): Record<s
 	}
 
 	if (oauthToken) {
-		const userAgent = isClaudeCodeClientUserAgent(incomingUserAgent)
-			? incomingUserAgent
-			: `claude-cli/${claudeCodeVersion} (external, local-agent, agent-sdk/${claudeAgentSdkVersion})`;
+		const userAgent = isClaudeCodeClientUserAgent(incomingUserAgent) ? incomingUserAgent : coworkUserAgent;
 		const headers = {
 			...modelHeaders,
-			...claudeCodeHeaders,
 			Accept: acceptHeader,
-			Authorization: `Bearer ${options.apiKey}`,
-			...sharedHeaders,
-			...(betaHeader ? { "anthropic-beta": betaHeader } : {}),
-			...(options.claudeCodeSessionId ? { "X-Claude-Code-Session-Id": options.claudeCodeSessionId } : {}),
-			"x-client-request-id": nodeCrypto.randomUUID(),
+			"Content-Type": "application/json",
 			"User-Agent": userAgent,
+			...(options.claudeCodeSessionId ? { "X-Claude-Code-Session-Id": options.claudeCodeSessionId } : {}),
+			...coworkHeaders,
+			...(betaHeader ? { "anthropic-beta": betaHeader } : {}),
+			"anthropic-dangerous-direct-browser-access": "true",
+			"anthropic-version": "2023-06-01",
+			Authorization: `Bearer ${options.apiKey}`,
+			"x-app": "cli",
+			"x-client-request-id": nodeCrypto.randomUUID(),
+			Connection: "keep-alive",
+			"Accept-Encoding": "gzip, deflate, br, zstd",
 			...(incomingApiKey ? { "X-Api-Key": incomingApiKey } : {}),
 		};
 		return allowAnthropicHeaderOverrides ? mergeHeaders(headers, anthropicHeaderOverrides) : headers;
@@ -423,6 +449,20 @@ export function clearAnthropicFastModeFallback(
 		(value as AnthropicProviderSessionState).fastModeDisabled = false;
 	}
 }
+/**
+ * Whether the direct Anthropic model's endpoint-scoped fast-mode fallback is
+ * currently active. Reading the map directly is intentional: inspection must
+ * not materialize a state entry for a model that has never streamed.
+ */
+export function isAnthropicFastModeFallbackDisabled(
+	providerSessionState: Map<string, ProviderSessionState> | undefined,
+	model: Model<Api>,
+): boolean {
+	if (!providerSessionState || model.provider !== "anthropic" || model.api !== "anthropic-messages") return false;
+	const baseUrl = resolveAnthropicBaseUrl(model as Model<"anthropic-messages">) ?? "https://api.anthropic.com";
+	const key = anthropicProviderSessionStateKey(baseUrl, model.id);
+	return (providerSessionState.get(key) as AnthropicProviderSessionState | undefined)?.fastModeDisabled ?? false;
+}
 
 function hasStrictAnthropicTools(params: MessageCreateParamsStreaming): boolean {
 	return params.tools?.some(tool => tool.strict === true) ?? false;
@@ -463,32 +503,9 @@ function getCacheControl(
 	};
 }
 
-// Stealth mode: mimic Claude Code's request fingerprint.
-export const claudeCodeVersion = "2.1.165";
-export const claudeAgentSdkVersion = "0.3.165";
-export const claudeClientVersion = "1.11187.4";
-export const claudeToolPrefix: string = "_";
-export const claudeCodeSystemInstruction = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
-// Claude Code caps requested output at 64k tokens even when the model ceiling is
-// higher (e.g. Opus 4.8 supports 128k); OAuth requests clamp to match the wire
-// fingerprint. API-key requests keep the full model ceiling.
-export const CLAUDE_CODE_MAX_OUTPUT_TOKENS = 64000;
-
-export function mapStainlessOs(platform: string): "MacOS" | "Windows" | "Linux" | "FreeBSD" | `Other::${string}` {
-	switch (platform.toLowerCase()) {
-		case "darwin":
-			return "MacOS";
-		case "windows":
-		case "win32":
-			return "Windows";
-		case "linux":
-			return "Linux";
-		case "freebsd":
-			return "FreeBSD";
-		default:
-			return `Other::${platform.toLowerCase()}`;
-	}
-}
+// Cowork mode: mimic the desktop agent's direct inference transport. Constants
+// live in the leaf module so registry/usage consumers avoid an init cycle.
+export * from "./claude-code-fingerprint";
 
 export function mapStainlessArch(arch: string): "x64" | "arm64" | "x86" | `other::${string}` {
 	switch (arch.toLowerCase()) {
@@ -507,22 +524,21 @@ export function mapStainlessArch(arch: string): "x64" | "arm64" | "x86" | `other
 	}
 }
 
-export const claudeCodeHeaders = {
-	"X-Stainless-Retry-Count": "0",
-	"X-Stainless-Runtime-Version": "v24.3.0",
-	"X-Stainless-Package-Version": "0.94.0",
-	"X-Stainless-Runtime": "node",
-	"X-Stainless-Lang": "js",
+/** Static headers emitted by Cowork's Linux Claude runtime. */
+export const coworkHeaders = {
 	"X-Stainless-Arch": mapStainlessArch(process.arch),
-	"X-Stainless-OS": mapStainlessOs(process.platform),
-	"X-Stainless-Timeout": "900",
-	"anthropic-client-platform": "desktop_app",
-	"anthropic-client-version": claudeClientVersion,
+	"X-Stainless-Lang": "js",
+	"X-Stainless-OS": "Linux",
+	"X-Stainless-Package-Version": "0.94.0",
+	"X-Stainless-Retry-Count": "0",
+	"X-Stainless-Runtime": "node",
+	"X-Stainless-Runtime-Version": "v26.3.0",
+	"X-Stainless-Timeout": "600",
 };
 
 const enforcedHeaderKeys = new Set(
 	[
-		...Object.keys(claudeCodeHeaders),
+		...Object.keys(coworkHeaders),
 		"Accept",
 		"Accept-Encoding",
 		"Connection",
@@ -541,7 +557,7 @@ const enforcedHeaderKeys = new Set(
 );
 
 const overridableAnthropicHeaderKeys = new Set(
-	[...Object.keys(claudeCodeHeaders), "anthropic-beta", "User-Agent", "x-app"].map(key => key.toLowerCase()),
+	[...Object.keys(coworkHeaders), "anthropic-beta", "User-Agent", "x-app"].map(key => key.toLowerCase()),
 );
 
 const CLAUDE_BILLING_HEADER_PREFIX = "x-anthropic-billing-header:";
@@ -558,7 +574,7 @@ function createClaudeBillingHeader(firstUserMessageText: string): string {
 		.slice(0, 3);
 	// cch=00000: placeholder replaced with the real attestation hash by wrapFetchForCch
 	// before the request hits the wire (see below).
-	return `${CLAUDE_BILLING_HEADER_PREFIX} cc_version=${claudeCodeVersion}.${versionSuffix}; cc_entrypoint=local-agent; ${CCH_PLACEHOLDER_STR};`;
+	return `${CLAUDE_BILLING_HEADER_PREFIX} cc_version=${claudeCodeVersion}.${versionSuffix}; cc_entrypoint=claude-desktop; ${CCH_PLACEHOLDER_STR};`;
 }
 
 // cch attestation: XXHash64(body_with_placeholder, seed) low-20-bits, 5 hex chars.
@@ -1135,6 +1151,7 @@ export type AnthropicClientOptionsArgs = {
 	thinkingDisplay?: AnthropicThinkingDisplay;
 	disableStrictTools?: boolean;
 	fetch?: FetchImpl;
+	maxRetryDelayMs?: number;
 	claudeCodeSessionId?: string;
 };
 
@@ -1144,12 +1161,13 @@ export type AnthropicClientOptionsResult = {
 	authToken?: string | null;
 	baseURL?: string;
 	maxRetries: number;
+	maxRetryDelayMs?: number;
 	defaultHeaders: Record<string, string>;
 	fetch?: FetchImpl;
 	fetchOptions?: AnthropicFetchOptions;
 };
 
-const CLAUDE_CODE_TLS_CIPHERS = tls.DEFAULT_CIPHERS;
+const COWORK_TLS_CIPHERS = tls.DEFAULT_CIPHERS;
 
 type FoundryTlsOptions = {
 	ca?: string | string[];
@@ -1312,7 +1330,7 @@ function resolveFoundryTlsOptions(model: Model<"anthropic-messages">): FoundryTl
 	return resolved;
 }
 
-function buildClaudeCodeTlsFetchOptions(
+function buildCoworkTlsFetchOptions(
 	model: Model<"anthropic-messages">,
 	baseUrl: string | undefined,
 ): AnthropicFetchOptions | undefined {
@@ -1334,7 +1352,7 @@ function buildClaudeCodeTlsFetchOptions(
 		tls: {
 			rejectUnauthorized: true,
 			serverName,
-			...(CLAUDE_CODE_TLS_CIPHERS ? { ciphers: CLAUDE_CODE_TLS_CIPHERS } : {}),
+			...(COWORK_TLS_CIPHERS ? { ciphers: COWORK_TLS_CIPHERS } : {}),
 			...(foundryTlsOptions ?? {}),
 		},
 	};
@@ -1840,20 +1858,19 @@ const streamAnthropicOnce = (
 				if (options?.taskBudget && !extraBetas.includes(taskBudgetBeta)) {
 					extraBetas.push(taskBudgetBeta);
 				}
-				// `output_config.effort` ships on thinking-on requests AND on the
-				// thinking-off adaptive pin (adaptive-only models get effort:"low" so
-				// the toggle cannot 400); the beta must accompany the field in both.
-				// MiniMax uses `thinking.type:"adaptive"` itself as the control surface,
-				// so the sentinel "adaptive" value intentionally sends no output_config.
-				// Skip Vertex rawPredict: that adapter needs betas in the body
-				// (`anthropic_beta`), not as an `anthropic-beta` HTTP header, so the
-				// effort field is dropped from the body there too (see buildParams) and
-				// advertising the beta would only earn a 400 (#5614).
+				// `output_config.effort` ships on thinking-on requests, explicit
+				// thinking-off adaptive pins, and forced-tool adaptive pins. The beta
+				// must accompany the field even when direct streamAnthropic callers omit
+				// thinkingEnabled (#6589). MiniMax uses `thinking.type:"adaptive"` itself
+				// as the control surface, so the sentinel "adaptive" value intentionally
+				// sends no output_config. Skip Vertex rawPredict: that adapter needs betas
+				// in the body (`anthropic_beta`), not as an `anthropic-beta` HTTP header,
+				// so the effort field is dropped from the body there too (see buildParams)
+				// and advertising the beta would only earn a 400 (#5614).
 				const sendsAdaptiveEffortPin =
-					options?.thinkingEnabled === false &&
-					model.thinking?.mode === "anthropic-adaptive" &&
-					!model.compat.disableAdaptiveThinking &&
-					!usesAdaptiveThinkingTagOnly(model);
+					isAdaptiveOnlyThinking(model) &&
+					(options?.thinkingEnabled === false ||
+						(model.compat.supportsForcedToolChoice && isForcedToolChoice(options?.toolChoice)));
 				if (
 					model.reasoning &&
 					model.provider !== "google-vertex" &&
@@ -1933,6 +1950,7 @@ const streamAnthropicOnce = (
 					thinkingEnabled: options?.thinkingEnabled,
 					thinkingDisplay: options?.thinkingDisplay,
 					fetch: options?.fetch,
+					maxRetryDelayMs: options?.maxRetryDelayMs,
 					claudeCodeSessionId: options?.sessionId ?? extractClaudeMetadataSessionId(options?.metadata?.user_id),
 					disableStrictTools,
 				});
@@ -1984,7 +2002,7 @@ const streamAnthropicOnce = (
 				| (AnthropicServerToolContent & { [kStreamingPartialJson]?: string })
 				| (ToolCall & { [kStreamingPartialJson]: string; [kStreamingLastParseLen]?: number })
 			) & { [kStreamingBlockIndex]: number };
-			const idleTimeoutMs = options?.streamIdleTimeoutMs ?? getStreamIdleTimeoutMs();
+			const idleTimeoutMs = options?.streamIdleTimeoutMs ?? getStreamIdleTimeoutMs(model.compat.streamIdleTimeoutMs);
 			const firstEventTimeoutMs = options?.streamFirstEventTimeoutMs ?? getStreamFirstEventTimeoutMs(idleTimeoutMs);
 			const requestTimeoutMs =
 				firstEventTimeoutMs !== undefined && firstEventTimeoutMs > 0 ? firstEventTimeoutMs : undefined;
@@ -2064,10 +2082,27 @@ const streamAnthropicOnce = (
 				// to zero even when no watchdog timeout is configured (the helper only
 				// pins it alongside a timeout; a client retry budget of 5 would otherwise
 				// multiply with PROVIDER_MAX_RETRIES into up to 66 wire attempts).
+				// Injected SDK clients (`options.client`) bypass the client-level
+				// `anthropic-beta` construction below, so any `output_config.effort` the
+				// body carries — the adaptive-only thinking-off / forced-tool pins and
+				// enabled-effort turns alike — would reach Anthropic without the required
+				// `effort-2025-11-24` beta and 400. `create()` accepts per-request headers
+				// (already used for the gateway web-search header), so merge the beta with
+				// any caller-provided `anthropic-beta` (deduped) and attach it there. Vertex
+				// never carries the effort field (dropped in buildParams), so it is unaffected.
+				const injectedClientEffortHeaders =
+					options?.client !== undefined &&
+					(params.output_config as AnthropicOutputConfig | undefined)?.effort !== undefined
+						? mergeAnthropicBetaHeader(mergedCallerHeaders, effortBeta)
+						: undefined;
+				const perRequestHeaders =
+					umansGatewayWebSearchHeader || injectedClientEffortHeaders
+						? { ...umansGatewayWebSearchHeader, ...injectedClientEffortHeaders }
+						: undefined;
 				const requestOptions = {
 					...createSdkStreamRequestOptions(requestSignal, requestTimeoutMs),
 					maxRetries: 0,
-					...(umansGatewayWebSearchHeader ? { headers: umansGatewayWebSearchHeader } : {}),
+					...(perRequestHeaders ? { headers: perRequestHeaders } : {}),
 				};
 				const anthropicRequest: unknown =
 					isOAuthToken && client.beta
@@ -2663,10 +2698,14 @@ const streamAnthropicOnce = (
 					// Honor the server's retry hint (`retry-after-ms`/`retry-after`) on
 					// 429/529-style failures: retrying sooner than the server asked is a
 					// guaranteed failure that just burns the retry budget.
-					const headerDelayMs =
-						streamFailure instanceof Error && streamFailure instanceof AnthropicApiError
-							? retryDelayFromHeaders(streamFailure.headers)
-							: undefined;
+					const headerDelayMs = getRetryAfterMsFromHeaders(getHeadersFromError(streamFailure));
+					// Bound the server-directed wait so a multi-hour `retry-after` cannot
+					// park the provider stream before higher-level recovery runs. A non-positive cap
+					// disables the bound; an over-cap hint surfaces the original error immediately.
+					const maxRetryDelayMs = options?.maxRetryDelayMs ?? 60_000;
+					if (headerDelayMs !== undefined && maxRetryDelayMs > 0 && headerDelayMs > maxRetryDelayMs) {
+						throw streamFailure;
+					}
 					const delayMs = headerDelayMs !== undefined ? Math.max(headerDelayMs, backoffDelayMs) : backoffDelayMs;
 					if (options?.providerRetryWait) {
 						await options.providerRetryWait(delayMs, options.signal);
@@ -2809,21 +2848,44 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 		dynamicHeaders,
 		hasTools = false,
 		thinkingEnabled = false,
-		thinkingDisplay,
 		isOAuth,
+		maxRetryDelayMs,
 		claudeCodeSessionId,
 		disableStrictTools: disableStrictToolsOverride,
 	} = args;
 	const compat = model.compat;
 	const disableStrictTools = disableStrictToolsOverride ?? compat.disableStrictTools;
-	const needsInterleavedBeta = interleavedThinking && !model.thinking?.supportsDisplay;
-	const oauthToken = isOAuth ?? isAnthropicOAuthToken(apiKey);
 	const baseUrl = resolveAnthropicBaseUrl(model, apiKey);
+	// Adaptive models (`supportsDisplay`) get native interleaved thinking on the
+	// official API, so only non-official signing routes need the beta (#6717).
+	// Two classifications feed the predicate: the effective URL, because Foundry
+	// and provider overrides can reroute a model without rebuilding its
+	// materialized compat, and non-official `compat.signingEndpoint`, because
+	// provider ids (e.g. ZenMux on a mirror URL) and explicit spec overrides on
+	// opaque proxies are authoritative even when the URL isn't recognized.
+	// Stale-official compat never qualifies: a canonical model rerouted to an
+	// unrecognized proxy keeps `officialEndpoint: true` (see
+	// resolveEagerToolInputStreamingSupport), and signing there is unknowable.
+	// Two signing routes still can't take the beta as this `anthropic-beta` HTTP
+	// header, so they're excluded: Vertex rawPredict accepts betas only in the
+	// JSON body (`anthropic_beta`) and 400s on the header (#5614), and GitHub
+	// Copilot rejects Anthropic betas outright — the `github-copilot` provider
+	// branch below strips them, but a custom provider id or a canonical model
+	// rerouted to `api.githubcopilot.com` / `copilot-api.*` reaches the generic
+	// header builder instead, so exclude those effective URLs here too.
+	const needsInterleavedBeta =
+		interleavedThinking &&
+		(!model.thinking?.supportsDisplay ||
+			(!isOfficialAnthropicApiUrl(baseUrl) &&
+				(isAnthropicSigningProxyUrl(baseUrl) || (compat.signingEndpoint && !compat.officialEndpoint)) &&
+				!isVertexRawPredictUrl(baseUrl ?? "") &&
+				!hostMatchesUrl(baseUrl, "githubCopilot")));
+	const oauthToken = isOAuth ?? isAnthropicOAuthToken(apiKey);
 	const supportsEagerToolInputStreaming = resolveEagerToolInputStreamingSupport(model, baseUrl);
 	const needsFineGrainedToolStreamingBeta =
 		hasTools && isOfficialAnthropicApiUrl(baseUrl) && !supportsEagerToolInputStreaming;
 	const foundryCustomHeaders = resolveAnthropicCustomHeaders(model);
-	const tlsFetchOptions = buildClaudeCodeTlsFetchOptions(model, baseUrl);
+	const tlsFetchOptions = buildCoworkTlsFetchOptions(model, baseUrl);
 	// Disable Bun's native ~300s pre-response fetch timeout (issue #2422).
 	// `AnthropicMessagesClient` already arms its own DEFAULT_TIMEOUT_MS timer
 	// per request, so the native ceiling can only short-circuit slow-prefill
@@ -2858,6 +2920,7 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 			authToken: copilotApiKey,
 			baseURL: baseUrl,
 			maxRetries: 5,
+			maxRetryDelayMs,
 			defaultHeaders,
 			fetch: cchFetch,
 			fetchOptions,
@@ -2888,14 +2951,7 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 		isCloudflareAiGateway: model.provider === "cloudflare-ai-gateway",
 		allowAnthropicHeaderOverrides: model.compat.allowAnthropicHeaderOverrides,
 		claudeCodeSessionId,
-		claudeCodeBetas: oauthToken
-			? buildClaudeCodeBetas(
-					hasTools || thinkingEnabled,
-					thinkingEnabled,
-					thinkingDisplay === "omitted",
-					disableStrictTools,
-				)
-			: [],
+		coworkBetas: oauthToken ? buildCoworkBetas(hasTools || thinkingEnabled, thinkingEnabled, disableStrictTools) : [],
 	});
 
 	if (model.provider === "cloudflare-ai-gateway") {
@@ -2905,6 +2961,7 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 			authToken: null,
 			baseURL: baseUrl,
 			maxRetries: 5,
+			maxRetryDelayMs,
 			defaultHeaders,
 			fetch: cchFetch,
 			fetchOptions,
@@ -2923,6 +2980,7 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 			authToken: null,
 			baseURL: baseUrl,
 			maxRetries: 5,
+			maxRetryDelayMs,
 			defaultHeaders,
 			fetch: cchFetch,
 			fetchOptions,
@@ -2945,6 +3003,7 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 		authToken: oauthToken ? apiKey : undefined,
 		baseURL: baseUrl,
 		maxRetries: 5,
+		maxRetryDelayMs,
 		defaultHeaders,
 		fetch: cchFetch,
 		fetchOptions,
@@ -2960,13 +3019,32 @@ function createClient(
 	return { client, isOAuthToken: oauthToken };
 }
 
-function disableThinkingIfToolChoiceForced(params: MessageCreateParamsStreaming): void {
+function disableThinkingIfToolChoiceForced(
+	params: MessageCreateParamsStreaming,
+	model: Model<"anthropic-messages">,
+): void {
 	const toolChoice = params.tool_choice;
 	if (!toolChoice) return;
 	if (toolChoice.type !== "any" && toolChoice.type !== "tool") return;
 
 	delete params.thinking;
 	delete params.context_management;
+
+	// Adaptive-only models can't be switched off by omitting `thinking` — a bare
+	// omission defaults to adaptive thinking ON, so a forced-tool turn would still
+	// reason instead of calling the tool (#6589). Pin the lowest adaptive effort
+	// instead of dropping it, mirroring the disable branch in buildParams. Vertex
+	// rawPredict is the sole exception: it can only carry the effort beta in the
+	// body (dropped there too, see buildParams), so it keeps the delete behavior.
+	// The effort beta itself is attached at the request site — including per-request
+	// for injected SDK clients that bypass client-level beta construction.
+	if (isAdaptiveOnlyThinking(model) && model.provider !== "google-vertex") {
+		const outputConfig = (params.output_config as AnthropicOutputConfig | undefined) ?? {};
+		outputConfig.effort = "low";
+		params.output_config = outputConfig;
+		return;
+	}
+
 	const outputConfig = params.output_config as AnthropicOutputConfig | undefined;
 	if (!outputConfig) return;
 
@@ -3229,6 +3307,22 @@ function usesAdaptiveThinkingTagOnly(model: Model<"anthropic-messages">): boolea
 	return thinking.efforts.length > 0;
 }
 
+/**
+ * True for adaptive-only Claude models (Opus 4.6+, Sonnet 4.6+, Fable/Mythos 5)
+ * that reject `thinking.type: "disabled"`. Turning thinking off on these models
+ * means omitting the `thinking` field entirely and pinning the lowest adaptive
+ * effort — a bare omission defaults to adaptive thinking ON. Excludes MiniMax,
+ * which drives adaptive thinking through the `thinking.type: "adaptive"` tag
+ * itself rather than `output_config.effort`.
+ */
+function isAdaptiveOnlyThinking(model: Model<"anthropic-messages">): boolean {
+	return (
+		model.thinking?.mode === "anthropic-adaptive" &&
+		!model.compat.disableAdaptiveThinking &&
+		!usesAdaptiveThinkingTagOnly(model)
+	);
+}
+
 function resolveAnthropicAdaptiveEffort(
 	model: Model<"anthropic-messages">,
 	options: AnthropicOptions,
@@ -3314,7 +3408,9 @@ function buildParams(
 	// Pre-compute metadata.
 	const metadataAccountId = readAnthropicMetadataAccountId(options?.metadata);
 	const metadataUserId = resolveAnthropicMetadataUserId(
-		options?.metadata?.user_id,
+		readMetadataString(options?.metadata, "user_id") ??
+			// Deliberately share the normalized affinity identity across Kimi's two transports.
+			(model.provider === "kimi-code" ? getOpenAIPromptCacheKey(options) : undefined),
 		isOAuthToken,
 		options?.sessionId,
 		metadataAccountId,
@@ -3352,17 +3448,14 @@ function buildParams(
 				if (mode === "anthropic-budget-effort" && effort && effort !== "adaptive") outputConfigEffort = effort;
 			}
 		} else if (options?.thinkingEnabled === false) {
-			const compat = model.compat;
-			if (
-				model.thinking?.mode === "anthropic-adaptive" &&
-				!compat.disableAdaptiveThinking &&
-				!usesAdaptiveThinkingTagOnly(model)
-			) {
+			if (isAdaptiveOnlyThinking(model)) {
 				// Adaptive-only Claude models (Opus 4.6+, Sonnet 4.6+, Fable/Mythos 5) reject
 				// `thinking.type: "disabled"` — adaptive thinking cannot be switched off.
 				// Omit the thinking field (the API defaults to adaptive) and pin the
 				// lowest effort so "thinking off" calls stay cheap instead of failing
 				// the request with a 400 (a hidden-thinking toggle must never break it).
+				// The effort field requires the `effort-2025-11-24` beta; it is attached
+				// at the request site, including per-request for injected SDK clients.
 				outputConfigEffort = "low";
 			} else {
 				thinking = { type: "disabled" };
@@ -3484,7 +3577,7 @@ function buildParams(
 		}
 	}
 
-	disableThinkingIfToolChoiceForced(params);
+	disableThinkingIfToolChoiceForced(params, model);
 	ensureMaxTokensForThinking(params, maxOutputTokens);
 	applyPromptCaching(params, cacheControl);
 	enforceCacheControlLimit(params, 4);
