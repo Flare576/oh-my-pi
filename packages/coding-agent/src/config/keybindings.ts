@@ -29,6 +29,7 @@ interface AppKeybindings {
 	"app.model.select": true;
 	"app.model.selectTemporary": true;
 	"app.tools.expand": true;
+	"app.tools.toggleVisibility": true;
 	"app.editor.external": true;
 	"app.message.followUp": true;
 	"app.retry": true;
@@ -133,6 +134,10 @@ export const KEYBINDINGS = {
 	"app.tools.expand": {
 		defaultKeys: "ctrl+o",
 		description: "Expand tools",
+	},
+	"app.tools.toggleVisibility": {
+		defaultKeys: "ctrl+shift+o",
+		description: "Show or hide tool activity",
 	},
 	"app.editor.external": {
 		defaultKeys: "ctrl+g",
@@ -612,12 +617,12 @@ export class KeybindingsManager extends TuiKeybindingsManager {
 		this.setUserBindings(mergeKeybindingsConfig(inheritedConfig, profileConfig));
 	}
 
-	setUserBindings(userBindings: KeybindingsConfig): void {
+	override setUserBindings(userBindings: KeybindingsConfig): void {
 		this.#userBindings = userBindings;
 		super.setUserBindings(userBindings);
 	}
 
-	getKeys(keybinding: Keybinding): KeyId[] {
+	override getKeys(keybinding: Keybinding): KeyId[] {
 		const keys = super.getKeys(keybinding);
 		const fallbackKey = getFallbackKey(keybinding);
 		if (fallbackKey === undefined || this.#userBindings[keybinding] !== undefined) return keys;
@@ -625,7 +630,7 @@ export class KeybindingsManager extends TuiKeybindingsManager {
 		return removeKey(keys, fallbackKey);
 	}
 
-	getResolvedBindings(): KeybindingsConfig {
+	override getResolvedBindings(): KeybindingsConfig {
 		const resolved = super.getResolvedBindings();
 		resolved[FOLLOW_UP_KEYBINDING] = keyConfigValue(this.getKeys(FOLLOW_UP_KEYBINDING));
 		return resolved;

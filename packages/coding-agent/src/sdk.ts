@@ -17,6 +17,7 @@ import type {
 	Model,
 	ModelUsageHealth,
 	ProviderSessionState,
+	ServiceTier,
 	SimpleStreamOptions,
 } from "@oh-my-pi/pi-ai";
 import { resolveApiKeyOnce } from "@oh-my-pi/pi-ai/auth-retry";
@@ -103,6 +104,7 @@ import {
 import { type FileSlashCommand, loadSlashCommands as loadSlashCommandsInternal } from "./extensibility/slash-commands";
 import type { HindsightSessionState } from "./hindsight/state";
 import { LocalProtocolHandler, type LocalProtocolOptions } from "./internal-urls";
+import { setSharedLspEnabled } from "./lsp/client";
 import { LSP_STARTUP_EVENT_CHANNEL, type LspStartupEvent } from "./lsp/startup-events";
 import {
 	deduplicateMCPToolsByName,
@@ -171,6 +173,7 @@ import {
 import { discoverAgents } from "./task/discovery";
 import { AgentOutputManager } from "./task/output-manager";
 import { wrapStreamFnWithProviderConcurrency } from "./task/provider-concurrency";
+import { isScoutSpawnable } from "./task/spawn-policy";
 import type { StructuredSubagentSchemaMode } from "./task/types";
 import {
 	AUTO_THINKING,
@@ -382,6 +385,8 @@ export interface CreateAgentSessionOptions {
 	thinkingLevel?: ConfiguredThinkingLevel;
 	/** Hard ceiling on the session's thinking effort (e.g. a task spawn's `task.maxEffort`-capped hint); retry-fallback recovery re-clamps to it. */
 	thinkingLevelCeiling?: Effort;
+	/** OpenAI service-tier override for this session. `null` omits `service_tier`. */
+	openAIServiceTier?: ServiceTier | null;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model; thinkingLevel?: ThinkingLevel }>;
 	/** Prewalk from the starting model to a fast/cheap target at the first edit/write once the todo list exists. */
@@ -1686,6 +1691,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// entries capture it at fetch time and are dropped at injection if a newer
 		// mutation (any tool) bumped it in the meantime.
 		const fileMutationVersions = new Map<string, number>();
+		const disposeCallbacks = new Set<() => void>();
 		const activeToolNames = new Set<string>();
 		const toolRegistry = new Map<string, Tool>();
 		const setActiveToolNames = (names: Iterable<string>): void => {
@@ -1739,6 +1745,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			trackEvalExecution: (execution, abortController) =>
 				session ? session.trackEvalExecution(execution, abortController) : execution,
 			getSessionId: () => sessionManager.getSessionId?.() ?? null,
+			isDisposed: () => session?.isDisposed ?? false,
 			getHindsightSessionState: () => session?.getHindsightSessionState(),
 			getMnemopiSessionState: () => session?.getMnemopiSessionState(),
 			getAgentId: () => resolvedAgentId,
@@ -1765,6 +1772,14 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			recordEvalSubagentUsage: output => sessionManager.recordEvalSubagentOutput(output),
 			getClientBridge: () => session?.clientBridge,
 			queueDeferredDiagnostics: entry => session?.yieldQueue.enqueue(LSP_LATE_DIAGNOSTIC_MESSAGE_TYPE, entry),
+			queueLaunchCompletion: notification =>
+				session?.queueLaunchCompletion(notification) ??
+				Promise.reject(new Error("Session unavailable for launch completion delivery")),
+			registerDisposeCallback: callback => {
+				disposeCallbacks.add(callback);
+				return () => disposeCallbacks.delete(callback);
+			},
+			registerSessionChangeCallback: callback => session?.registerSessionChangeCallback(callback),
 			bumpFileMutationVersion: path => {
 				const next = (fileMutationVersions.get(path) ?? 0) + 1;
 				fileMutationVersions.set(path, next);
@@ -2273,9 +2288,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 					}
 				}
 				const usageReservePolicy = settings.get("retry.usageReservePolicy");
+				const modelFallbackEnabled = settings.get("retry.modelFallback");
 				if (
-					(hasUsageFallbackCandidate || usageReservePolicy === "fail-closed") &&
-					settings.get("retry.modelFallback") &&
+					((modelFallbackEnabled && (hasUsageFallbackCandidate || usageFallbackTriggered)) ||
+						usageReservePolicy === "fail-closed") &&
 					settings.get("retry.usageAwareFallback")
 				) {
 					let usageHealth: ModelUsageHealth | undefined;
@@ -2298,8 +2314,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 								`Usage depleted for ${primary.model.provider}/${primary.model.id}; reserve policy is fail-closed.`,
 							);
 						}
-						usageFallbackTriggered = true;
-						continue;
+						if (modelFallbackEnabled) {
+							usageFallbackTriggered = true;
+							continue;
+						}
 					}
 					if (usageHealth?.state === "reserve") {
 						if (usageReservePolicy === "fail-closed") {
@@ -2307,7 +2325,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 								`Usage reserve reached for ${primary.model.provider}/${primary.model.id}; reserve policy is fail-closed.`,
 							);
 						}
-						if (usageReservePolicy === "auto" || (!options.hasUI && !options.deferUsageReserveConfirmation)) {
+						if (
+							modelFallbackEnabled &&
+							(usageReservePolicy === "auto" || (!options.hasUI && !options.deferUsageReserveConfirmation))
+						) {
 							usageFallbackTriggered = true;
 							continue;
 						}
@@ -2680,7 +2701,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// a real tool.
 		//
 		// It must be a `replace`-mode instance. `PiEditExecArgs` carries
-		// `old_text`/`new_text` pairs, which is exactly `replace`'s schema and
+		// `old_string`/`new_string` replacements, which is exactly `replace`'s schema and
 		// nothing else's — under the default `hashline` mode the frame's args do
 		// not match the tool's parameters at all. The registry instance follows
 		// the session's configured mode, so the bridge builds its own.
@@ -2881,8 +2902,8 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				}
 			}
 			let appendPrompt: string | undefined = appendParts.length > 0 ? appendParts.join("\n\n") : undefined;
-			// Owned/in-band tool dialects (non-native) require the catalog as `# Tool:`
-			// sections; native tool calling lets the compact name list suffice.
+			// Owned/in-band tool dialects (non-native) require the full functions-
+			// namespace catalog; native tool calling lets the compact name list suffice.
 			const nativeTools = resolveDialect(settings.get("tools.format"), agent?.state.model ?? model) === undefined;
 			const promptTools = projectSystemPromptToolMetadata(
 				tools,
@@ -2916,6 +2937,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				eagerTasksAlways,
 				taskBatch: settings.get("task.batch"),
 				taskMaxConcurrency: settings.get("task.maxConcurrency"),
+				scoutAvailable: isScoutSpawnable(
+					settings.get("task.disabledAgents") as string[] | undefined,
+					options.spawns ?? "*",
+				),
 				taskIrcEnabled: !restrictToolNames && isIrcEnabled(settings, options.taskDepth ?? 0),
 				autoQaEnabled: !restrictToolNames && isAutoQaEnabled(settings),
 				secretsEnabled,
@@ -3149,13 +3174,19 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		const openaiWebsocketSetting = settings.get("providers.openaiWebsockets") ?? "off";
 		const preferOpenAICodexWebsockets =
 			openaiWebsocketSetting === "on" ? true : openaiWebsocketSetting === "off" ? false : undefined;
-		const initialServiceTierByFamily = hasServiceTierEntry
+		const configuredServiceTierByFamily = hasServiceTierEntry
 			? (existingSession.serviceTier ?? {})
 			: buildServiceTierByFamily(
 					settings.get("tier.openai"),
 					settings.get("tier.anthropic"),
 					settings.get("tier.google"),
 				);
+		const initialServiceTierByFamily = { ...configuredServiceTierByFamily };
+		if (options.openAIServiceTier === null) {
+			delete initialServiceTierByFamily.openai;
+		} else if (options.openAIServiceTier !== undefined) {
+			initialServiceTierByFamily.openai = options.openAIServiceTier;
+		}
 
 		// One-shot launch-latency marker: fired the first time the loop dispatches
 		// a chat request to the provider transport. See onFirstChatDispatch.
@@ -3258,6 +3289,11 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// Restore messages if session has existing data
 		if (hasExistingSession) {
 			agent.replaceMessages(existingSession.messages);
+			if (options.openAIServiceTier !== undefined) {
+				sessionManager.appendServiceTierChange(
+					Object.keys(initialServiceTierByFamily).length > 0 ? initialServiceTierByFamily : null,
+				);
+			}
 		} else {
 			// Save initial model, thinking level, and service tier for new sessions so they can be restored on resume.
 			if (model) {
@@ -3268,8 +3304,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				// classification persists its concrete effort once a real user turn runs.
 				sessionManager.appendThinkingLevelChange(effectiveThinkingLevel);
 			}
-			if (Object.keys(initialServiceTierByFamily).length > 0) {
-				sessionManager.appendServiceTierChange(initialServiceTierByFamily);
+			if (options.openAIServiceTier !== undefined || Object.keys(initialServiceTierByFamily).length > 0) {
+				sessionManager.appendServiceTierChange(
+					Object.keys(initialServiceTierByFamily).length > 0 ? initialServiceTierByFamily : null,
+				);
 			}
 		}
 
@@ -3291,6 +3329,9 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				const id = sessionManager.getSessionId?.();
 				return id ? `${id}-advisor` : null;
 			},
+			queueLaunchCompletion: notification =>
+				session?.queueLaunchCompletion(notification) ??
+				Promise.reject(new Error("Session unavailable for launch completion delivery")),
 			getAgentId: () => "advisor",
 			// The primary's availability signals are wrong for advisors: their tool
 			// slate is filtered separately at runtime (default read/grep/glob, no
@@ -3347,6 +3388,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			initialAdvisorCosts,
 			settings,
 			autoApprove: options.autoApprove,
+			scoutAllowedBySpawnPolicy: isScoutSpawnable(undefined, options.spawns ?? "*"),
 			evalKernelOwnerId,
 			// Defined only for top-level sessions (creation is gated above).
 			// AgentSession uses this to decide whether it may dispose the global
@@ -3605,6 +3647,8 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 					unsubscribeCredentialDisabled?.();
 					unsubscribeMcpNotifications?.();
 					unregisterMcpPostmortem?.();
+					for (const callback of disposeCallbacks) callback();
+					disposeCallbacks.clear();
 					// Drop refs so the process-global postmortem list doesn't retain
 					// the bridge closure past explicit dispose.
 					unsubscribeMcpNotifications = undefined;
@@ -3648,6 +3692,11 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				})();
 			}
 		}
+
+		// Broker-shared language servers: one server per project, multiplexed
+		// across omp instances by the LSP mux daemon. Session-level because the
+		// flag lives in module state consulted on every client cold-start.
+		setSharedLspEnabled(enableLsp && settings.get("lsp.shared"));
 
 		// Start LSP warmup in the background so startup does not block on language server initialization.
 		// With `lsp.lazy` (the default) the warmup is skipped: recognized servers are still discovered and

@@ -1,15 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
-import {
-	type Client,
-	ClientSideConnection,
-	type CreateTerminalRequest,
-	type CreateTerminalResponse,
-	ndJsonStream,
-	type RequestPermissionRequest,
-	type RequestPermissionResponse,
-	type SessionNotification,
-} from "@agentclientprotocol/sdk";
 import type { Model } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
@@ -19,6 +9,16 @@ import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
 import { TempDir } from "@oh-my-pi/pi-utils";
+import {
+	type Client,
+	ClientSideConnection,
+	type CreateTerminalRequest,
+	type CreateTerminalResponse,
+	ndJsonStream,
+	type RequestPermissionRequest,
+	type RequestPermissionResponse,
+	type SessionNotification,
+} from "@oh-my-pi/pi-utils/acp";
 
 const TEST_MODEL: Model = buildModel({
 	id: "claude-sonnet-4-20250514",

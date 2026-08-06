@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
+import { type } from "@oh-my-pi/omptype";
 import { Agent, type AgentTool } from "@oh-my-pi/pi-agent-core";
 import { Effort } from "@oh-my-pi/pi-ai";
 import { createMockModel } from "@oh-my-pi/pi-ai/providers/mock";
@@ -13,7 +14,6 @@ import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import type { AgentDefinition } from "@oh-my-pi/pi-coding-agent/task/types";
 import { TempDir } from "@oh-my-pi/pi-utils";
-import { type } from "arktype";
 
 /** Minimal AgentDefinition for persona tests — only the fields applyAgentPersona reads. */
 function makePersona(name: string, systemPrompt: string, order?: number): AgentDefinition {
