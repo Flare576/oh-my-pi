@@ -2,9 +2,69 @@
 
 ## [Unreleased]
 
+## [17.4.2] - 2026-08-21
+
 ### Fixed
 
-- Fixed the in-house `marked` list tokenizer still consuming a trailing blank run into the list token at end of input (17.2.10 fixed only the mid-document case). `- item\n\n` now lexes as a tight list plus a `space` token, matching real marked, instead of a loose list whose raw includes the blank.
+- Made malformed advanced-serialization frames from a worker subprocess non-fatal: Bun surfaces an undecodable IPC frame as a process-level `uncaughtException` in the parent (oven-sh/bun#37287), which the postmortem handler treated as fatal and tore down every active session and subagent. The handler now recognizes the decode failure and, keeping the session alive, faults the active advanced-IPC worker subsystems so their clients reject in-flight requests and recycle the subprocess instead of awaiting forever — mirroring the existing ipc-send EPIPE containment. ([#9158](https://github.com/can1357/oh-my-pi/issues/9158))
+
+## [17.4.1] - 2026-08-21
+
+### Added
+
+- New unified archive API `@oh-my-pi/pi-utils/ar`, providing an `openArchive`/`ArchiveReader` interface across formats (including ZIP/ZIP64, tar with gz/bz2/xz/zst compression, ASAR, RAR 4/5, 7z, ISO 9660, CAB, cpio, RPM, Unix ar, Debian packages, LZH, ARJ, and single-stream compressed files) with lazy ranged reads for local files or HTTP range requests via `httpByteSource`, size limits, symlink-safe extraction, and deterministic archive creation for zip, tar, tar.gz, tar.zst, and asar.
+
+## [17.3.8] - 2026-08-19
+
+### Added
+
+- Exported `BINARY_SNIFF_BYTES`, the header window `isProbablyBinary` sniffs, so a caller holding the whole file in memory can classify the identical prefix through `isProbablyBinaryHeader` instead of reopening the file.
+
+## [17.3.5] - 2026-08-16
+
+### Fixed
+
+- Fixed the Markdown renderer incorrectly breaking into a raw code block when a 4-space-indented line (such as a box-drawing tree child under a └── branch) directly followed paragraph text; it now correctly stays part of the paragraph, matching standard Markdown behavior.
+
+## [17.3.2] - 2026-08-13
+
+### Fixed
+
+- Fixed `fetchWithRetry()` aborts during retry backoff to preserve the documented `"Request was aborted"` error contract ([#8450](https://github.com/can1357/oh-my-pi/issues/8450)).
+
+## [17.3.0] - 2026-08-13
+
+### Fixed
+
+- Optimized performance of partial JSON parsing for long streaming tool-call arguments.
+- Fixed Mermaid ASCII multi-word edge labels where routed lines would show through spaces.
+
+## [17.2.15] - 2026-08-12
+
+### Changed
+
+- Extended parsed Server-Sent Events (SSE) to include optional id and retry fields, enabling reconnecting transports to retain stream cursors and respect server-requested retry intervals.
+
+## [17.2.13] - 2026-08-11
+
+### Changed
+
+- Changed stale process-log retention from the newest five files globally to one newest file per completed process and day within the current and previous four local calendar days. This preserves bounded daily diagnostic coverage while continuing to remove one-use audit files.
+- Changed outbound User-Agent consumers to share the versioned `USER_AGENT` constant (`omp/<version>`).
+
+### Fixed
+
+- Fixed Mermaid ASCII state pseudostates rendering empty boxes, miscoloring final-state borders, and inverting rounded corners in bottom-to-top diagrams.
+
+## [17.2.11] - 2026-08-07
+
+### Added
+
+- Added `repair` and `rawKeys` options to `parseFrontmatter` to support spec-conformant loading (disabling lenient recovery and preserving keys verbatim), and exported `normalizeFrontmatterKeys` for manual key normalization.
+
+### Fixed
+
+- Fixed the in-house `marked` list tokenizer incorrectly consuming trailing blank lines at the end of input, ensuring correct list tightness and token generation matching standard `marked` behavior.
 
 ## [17.2.10] - 2026-08-06
 
