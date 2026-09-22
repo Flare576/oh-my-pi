@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
 import { SelectorController } from "@oh-my-pi/pi-coding-agent/modes/controllers/selector-controller";
-import { initTheme } from "@oh-my-pi/pi-coding-agent/modes/theme/theme";
+import { initTheme } from "@oh-my-pi/pi-tui/theme";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 
 beforeAll(() => {
@@ -28,6 +28,8 @@ function createHandle(opts?: { newCwd?: string }) {
 
 	const ctx = {
 		clearTransientSessionUi: vi.fn(),
+		prepareSessionSwitch: vi.fn(async () => {}),
+		resetObserverRegistry: vi.fn(),
 		settings: { flush: vi.fn(async () => {}) },
 		session: {
 			switchSession,
