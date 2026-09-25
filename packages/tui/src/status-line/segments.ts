@@ -293,6 +293,10 @@ const modelSegment: StatusLineSegment = {
 			content += accentFg(ctx, "statusLineModel", tail);
 		}
 
+		// Anthropic slow mode: a warning-colored badge so a throttled lane is never
+		// mistaken for normal service.
+		const slowModeLabel = ctx.session.getAnthropicSlowModeLabel?.();
+		if (slowModeLabel) content += theme.fg("warning", `${theme.sep.dot}${slowModeLabel}`);
 		return { content, visible: true };
 	},
 };
@@ -881,9 +885,9 @@ const usageSegment: StatusLineSegment = {
 			parts.push(formatQuotaWindow(ctx, "7d", u.sevenDay.percent, u.sevenDay.resetHours, "h", "round"));
 		}
 		if (u.monthly) {
-			// Cursor and OpenCode Go (normalize gates monthly to those providers).
-			// Both floor used percents upstream (Cursor's dashboard shows 1.88 →
-			// "1% used"; OpenCode's endpoint already emits floored integers).
+			// Monthly-subscription providers only (the normalizer gates the class).
+			// Cursor and QwenCloud floor used percents upstream (Cursor's dashboard
+			// shows 1.88 → "1% used"; OpenCode's endpoint emits floored integers).
 			parts.push(formatQuotaWindow(ctx, "mo", u.monthly.percent, u.monthly.resetHours, "h", "floor"));
 		}
 		if (u.resetCredits) {

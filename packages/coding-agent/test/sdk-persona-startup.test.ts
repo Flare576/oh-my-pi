@@ -161,7 +161,7 @@ describe("createAgentSession — startup persona loading", () => {
 
 	it("does not write model_change or thinking_level_change on startup restore", async () => {
 		// Enable anthropic auth so the persona's model string can resolve
-		authStorage.setRuntimeApiKey("anthropic", "test-key");
+		authStorage.keys.setRuntime("anthropic", "test-key");
 
 		const sm = SessionManager.inMemory();
 		// Stamp a persona in history so startup uses the restore path (not default-first)
