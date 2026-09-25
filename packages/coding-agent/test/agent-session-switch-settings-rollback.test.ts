@@ -99,7 +99,9 @@ describe("AgentSession.switchSession settings rollback on failure", () => {
 		});
 		sessions.push(session);
 
-		await expect(session.switchSession(targetSessionFile!)).rejects.toThrow("simulated persona resolution failure");
+		await expect(session.switchSession(targetSessionFile!, { onCwdChange: async () => true })).rejects.toThrow(
+			"simulated persona resolution failure",
+		);
 
 		// The session itself rolled back to project A (sessionManager.restoreState).
 		expect(sessionManager.getCwd()).toBe(path.normalize(dirA.path()));
