@@ -22,7 +22,14 @@ function createHandle(opts?: { newCwd?: string }) {
 	const cwd = "/tmp/original-project";
 	const newCwd = opts?.newCwd ?? cwd;
 
-	const switchSession = vi.fn(async () => true);
+	const switchSession = vi.fn(
+		async (_path: string, options?: { onCwdChange?: (newCwd: string, sourceCwd: string) => Promise<boolean> }) => {
+			if (options?.onCwdChange && newCwd !== cwd) {
+				await options.onCwdChange(newCwd, cwd);
+			}
+			return true;
+		},
+	);
 	const showStatus = vi.fn();
 	const applyCwdChange = vi.fn(async () => {});
 
@@ -71,7 +78,10 @@ describe("SelectorController.handleResumeSession — UI contract", () => {
 		await controller.handleResumeSession("/tmp/test-project/sessions/session.jsonl");
 
 		expect(switchSession).toHaveBeenCalledTimes(1);
-		expect(switchSession).toHaveBeenCalledWith("/tmp/test-project/sessions/session.jsonl");
+		expect(switchSession).toHaveBeenCalledWith(
+			"/tmp/test-project/sessions/session.jsonl",
+			expect.objectContaining({ onCwdChange: expect.any(Function) }),
+		);
 	});
 
 	it("shows 'Resumed session' when cwd is unchanged", async () => {

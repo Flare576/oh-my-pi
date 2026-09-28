@@ -4553,7 +4553,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			resolvePersona: async (name, cwd) => {
 				// null = explicit clear sentinel — honor it (no persona on restore).
 				if (name === null) return null;
-				const { agents } = await discoverAgents(cwd);
+				const { agents } = await discoverAgents(cwd, undefined, undefined, agentDir);
 				const disabled = cfgTaskDisabledAgents.get(settings);
 				const primary = getPrimaryAgents(agents, disabled);
 				if (!primary.length) return null;
@@ -4578,7 +4578,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		hasSession = true;
 		// Auto-load initial persona for top-level sessions
 		if (taskDepth === 0) {
-			const { agents: discoveredAgentsForPersona } = await discoverAgents(cwd);
+			const { agents: discoveredAgentsForPersona } = await discoverAgents(cwd, undefined, undefined, agentDir);
 			const disabledAgents = cfgTaskDisabledAgents.get(settings);
 			const primaryAgents = getPrimaryAgents(discoveredAgentsForPersona, disabledAgents);
 			// Resolve --agent against primary agents only (case-insensitive).

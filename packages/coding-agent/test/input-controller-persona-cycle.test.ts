@@ -11,10 +11,13 @@
  *   - Non-primary agents are excluded from the rotation.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { InputController } from "@oh-my-pi/pi-coding-agent/modes/controllers/input-controller";
+import { SpaceHoldGesture } from "@oh-my-pi/pi-tui/space-hold";
 import { initTheme } from "@oh-my-pi/pi-tui/theme";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
+import { cfgTaskAgentModelOverrides, cfgTaskDisabledAgents } from "@oh-my-pi/pi-coding-agent/task/settings";
 import type { AgentDefinition } from "@oh-my-pi/pi-coding-agent/task/types";
 
 beforeAll(() => {
@@ -58,6 +61,7 @@ function createContext() {
 			setCustomKeyHandler: vi.fn(),
 			clearCustomKeyHandlers: vi.fn(),
 			getText: () => "",
+			spaceHold: new SpaceHoldGesture(() => {}),
 		} as unknown as InteractiveModeContext["editor"],
 		ui: {
 			requestRender: vi.fn(),
@@ -80,10 +84,12 @@ function createContext() {
 			extensionRunner: undefined,
 			prompt: vi.fn(async () => {}),
 			abort: vi.fn(async () => {}),
-			settings: {
-				get: (key: string) =>
-					key === "task.disabledAgents" ? [] : key === "task.agentModelOverrides" ? {} : undefined,
-			},
+			settings: (() => {
+				const s = Settings.isolated();
+				cfgTaskDisabledAgents.set(s, []);
+				cfgTaskAgentModelOverrides.set(s, {});
+				return s;
+			})(),
 		} as unknown as InteractiveModeContext["session"],
 		sessionManager: {
 			getCwd: () => "/tmp/test-cwd",
@@ -117,6 +123,7 @@ function createContext() {
 		toggleThinkingBlockVisibility: vi.fn(),
 		showModelSelector: vi.fn(),
 		hasActiveBtw: vi.fn(() => false),
+		dictationSpaceHold: vi.fn(() => ({ enabled: () => false, onStart: () => {}, onEnd: () => {} })),
 		showError: vi.fn(),
 	} as unknown as InteractiveModeContext;
 

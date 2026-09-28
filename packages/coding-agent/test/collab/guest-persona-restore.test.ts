@@ -18,9 +18,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, spyOn, vi } from "bun:test";
 import { generateRoomKey, importRoomKey } from "@oh-my-pi/pi-coding-agent/collab/crypto";
+import { cfgCollabDisplayName } from "@oh-my-pi/pi-coding-agent/collab/settings";
 import { CollabGuestLink } from "@oh-my-pi/pi-coding-agent/collab/guest";
 import { COLLAB_PROTO, type CollabFrame, formatCollabLink } from "@oh-my-pi/pi-coding-agent/collab/protocol";
 import { CollabSocket } from "@oh-my-pi/pi-coding-agent/collab/relay-client";
+import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import { installInMemoryRelay, uninstallInMemoryRelay } from "./helpers/in-memory-relay";
 
@@ -37,7 +39,11 @@ function makeState(): Extract<CollabFrame, { t: "welcome" }>["state"] {
 function makeContext(setReplicaPersonaName: (name: string | null | undefined) => void) {
 	const ctx = {
 		collabGuest: undefined,
-		settings: { get: () => "" },
+		settings: (() => {
+			const s = Settings.isolated();
+			cfgCollabDisplayName.set(s, "");
+			return s;
+		})(),
 		sessionManager: {
 			getSessionFile: () => null,
 			getSessionName: () => "local session",
