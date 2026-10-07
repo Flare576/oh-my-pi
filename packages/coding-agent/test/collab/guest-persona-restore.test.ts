@@ -16,6 +16,7 @@
  * the override in the first place. The test drives a real join through the
  * in-memory relay so `#replicaActivated` is genuinely true before `leave()`.
  */
+import * as fsp from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it, spyOn, vi } from "bun:test";
 import { generateRoomKey, importRoomKey } from "@oh-my-pi/pi-coding-agent/collab/crypto";
 import { cfgCollabDisplayName } from "@oh-my-pi/pi-coding-agent/collab/settings";
@@ -24,6 +25,7 @@ import { COLLAB_PROTO, type CollabFrame, formatCollabLink } from "@oh-my-pi/pi-c
 import { CollabSocket } from "@oh-my-pi/pi-coding-agent/collab/relay-client";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
+import { EventBus } from "@oh-my-pi/pi-coding-agent/utils/event-bus";
 import { installInMemoryRelay, uninstallInMemoryRelay } from "./helpers/in-memory-relay";
 
 function makeState(): Extract<CollabFrame, { t: "welcome" }>["state"] {
@@ -66,8 +68,12 @@ function makeContext(setReplicaPersonaName: (name: string | null | undefined) =>
 		compactionQueuedMessages: [],
 		streamingComponent: undefined,
 		streamingMessage: undefined,
+		transcriptMessageComponents: new WeakMap(),
 		pendingTools: new Map(),
 		loadingAnimation: undefined,
+		ensureLoadingAnimation: () => {},
+		autoCompactionLoader: undefined,
+		retryLoader: undefined,
 		statusLine: {
 			setCollabStatus: () => {},
 			invalidate: () => {},
@@ -76,7 +82,7 @@ function makeContext(setReplicaPersonaName: (name: string | null | undefined) =>
 			markActivityEnd: () => {},
 		},
 		ui: { requestRender: () => {} },
-		chatContainer: { clear: () => {} },
+		chatContainer: { clear: () => {}, disposeChildren: () => {} },
 		resetObserverRegistry: () => {},
 		renderInitialMessages: () => {},
 		reloadTodos: () => Promise.resolve(),
@@ -84,8 +90,13 @@ function makeContext(setReplicaPersonaName: (name: string | null | undefined) =>
 		showError: () => {},
 		updateEditorTopBorder: () => {},
 		updateEditorBorderColor: () => {},
-		eventController: { handleEvent: () => Promise.resolve(), takeDisplaceableComponents: () => [] },
+		eventController: {
+			dispatchSessionEvent: () => Promise.resolve(),
+			takeDisplaceableComponents: () => [],
+			resetTranscriptAnchors: () => {},
+		},
 		syncRunningSubagentBadge: () => {},
+		eventBus: new EventBus(),
 	} as unknown as InteractiveModeContext;
 	return ctx;
 }
@@ -101,6 +112,7 @@ afterEach(() => {
 describe("CollabGuestLink — persona restore on leave", () => {
 	it("clears the replica persona override before restoring the local session", async () => {
 		const writeSpy = spyOn(Bun, "write").mockResolvedValue(0);
+		const renameSpy = spyOn(fsp, "rename").mockResolvedValue(undefined);
 		const setReplicaPersonaName = vi.fn();
 
 		const roomId = "persona-restore-room-1";
@@ -136,6 +148,7 @@ describe("CollabGuestLink — persona restore on leave", () => {
 		} finally {
 			hostSocket.close();
 			writeSpy.mockRestore();
+			renameSpy.mockRestore();
 		}
 	});
 });

@@ -11,7 +11,7 @@ import type {
 	Usage,
 } from "@oh-my-pi/pi-ai/types";
 import { createOpenAIResponsesHistoryPayload } from "@oh-my-pi/pi-ai/utils";
-import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
+import type { Model } from "@oh-my-pi/pi-catalog/types";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
@@ -21,6 +21,19 @@ import type { SessionEntry, SessionMessageEntry } from "@oh-my-pi/pi-coding-agen
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import * as discovery from "@oh-my-pi/pi-coding-agent/task/discovery";
 import { removeSyncWithRetries, Snowflake } from "@oh-my-pi/pi-utils";
+import { getTestModel } from "./helpers/model-fixtures";
+
+const openaiModel = getTestModel("openai", model => model.api === "openai-responses" && model.reasoning);
+const alternateOpenaiModel = getTestModel(
+	"openai",
+	model => model.api === "openai-responses" && model.reasoning && model.id !== openaiModel.id,
+);
+const codexModel = getTestModel("openai-codex", model => model.api === "openai-codex-responses" && model.reasoning);
+const copilotModel = getTestModel("github-copilot", model => model.api === "openai-responses" && model.reasoning);
+
+function modelSelector(model: Model): string {
+	return `${model.provider}/${model.id}`;
+}
 
 function createUsage(): Usage {
 	return {
@@ -33,14 +46,14 @@ function createUsage(): Usage {
 	};
 }
 
-function createUserHistoryPayload(provider = "openai"): ProviderPayload {
+function createUserHistoryPayload(provider: Model["provider"] = openaiModel.provider): ProviderPayload {
 	return createOpenAIResponsesHistoryPayload(provider, [
 		{ type: "message", role: "user", content: [{ type: "input_text", text: "Preserved user history" }] },
 		{ type: "compaction", encrypted_content: "enc_preserved" },
 	]);
 }
 
-function createStaleAssistantHistoryPayload(provider = "openai"): ProviderPayload {
+function createStaleAssistantHistoryPayload(provider: Model["provider"]): ProviderPayload {
 	return createOpenAIResponsesHistoryPayload(provider, [
 		{ type: "reasoning", encrypted_content: "enc_stale" },
 		{
@@ -53,11 +66,7 @@ function createStaleAssistantHistoryPayload(provider = "openai"): ProviderPayloa
 	]);
 }
 
-function createStaleAssistantMessage(
-	text: string,
-	options: { api?: AssistantMessage["api"]; provider?: string; model?: string } = {},
-): AssistantMessage {
-	const { api = "openai-responses", provider = "github-copilot", model = "gpt-5-mini" } = options;
+function createStaleAssistantMessage(text: string, model: Model = copilotModel): AssistantMessage {
 	return {
 		role: "assistant",
 		content: [
@@ -79,12 +88,12 @@ function createStaleAssistantMessage(
 				thoughtSignature: "tool_sig_preserved",
 			},
 		],
-		api,
-		provider,
-		model,
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
 		usage: createUsage(),
 		stopReason: "stop",
-		providerPayload: createStaleAssistantHistoryPayload(provider),
+		providerPayload: createStaleAssistantHistoryPayload(model.provider),
 		timestamp: Date.now(),
 	};
 }
@@ -114,9 +123,9 @@ function createPairedToolResult(): ToolResultMessage {
 function appendStaleAssistantTurn(
 	sessionManager: SessionManager,
 	text: string,
-	options: { api?: AssistantMessage["api"]; provider?: string; model?: string } = {},
+	model: Model = copilotModel,
 ): { assistantId: string; toolResultId: string } {
-	const assistantId = sessionManager.appendMessage(createStaleAssistantMessage(text, options));
+	const assistantId = sessionManager.appendMessage(createStaleAssistantMessage(text, model));
 	const toolResultId = sessionManager.appendMessage(createPairedToolResult());
 	return { assistantId, toolResultId };
 }
@@ -247,14 +256,8 @@ let sharedRegistryDir: string;
 async function createSessionHarness(
 	tempDir: string,
 	sessionManager: SessionManager,
-	options: { provider?: Parameters<typeof getBundledModel>[0]; modelId?: string } = {},
+	model: Model = openaiModel,
 ): Promise<{ session: AgentSession }> {
-	const { provider = "openai", modelId = "gpt-5-mini" } = options;
-	const model = getBundledModel(provider, modelId);
-	if (!model) {
-		throw new Error(`Expected bundled test model ${provider}/${modelId}`);
-	}
-
 	const { session } = await createAgentSession({
 		cwd: tempDir,
 		agentDir: tempDir,
@@ -379,11 +382,7 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		const assistantText = "Codex assistant snapshot";
 
 		const { sessionFile } = await createPersistedSession(tempDir, sessionManager => {
-			appendStaleAssistantTurn(sessionManager, assistantText, {
-				api: "openai-codex-responses",
-				provider: "openai-codex",
-				model: "gpt-5.5",
-			});
+			appendStaleAssistantTurn(sessionManager, assistantText, codexModel);
 		});
 
 		const openedSessionManager = await SessionManager.open(sessionFile, tempDir);
@@ -433,21 +432,14 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		const assistantText = "Reloaded assistant response";
 
 		const { sessionFile } = await createPersistedSession(tempDir, sessionManager => {
-			sessionManager.appendModelChange("openai-codex/gpt-5.5");
+			sessionManager.appendModelChange(modelSelector(codexModel));
 			sessionManager.appendMessage({ role: "user", content: "Reload summary", timestamp: Date.now() - 2 });
-			appendStaleAssistantTurn(sessionManager, assistantText, {
-				api: "openai-codex-responses",
-				provider: "openai-codex",
-				model: "gpt-5.5",
-			});
+			appendStaleAssistantTurn(sessionManager, assistantText, codexModel);
 			sessionManager.appendMessage({ role: "user", content: "Reload follow-up", timestamp: Date.now() - 1 });
 		});
 
 		const reloadedSessionManager = await SessionManager.open(sessionFile, tempDir);
-		const { session } = await createSessionHarness(tempDir, reloadedSessionManager, {
-			provider: "openai-codex",
-			modelId: "gpt-5.5",
-		});
+		const { session } = await createSessionHarness(tempDir, reloadedSessionManager, codexModel);
 		sessions.push(session);
 
 		const closeSpy = vi.fn();
@@ -472,19 +464,12 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		const assistantText = "Reloaded metadata-only response";
 
 		const { sessionFile } = await createPersistedSession(tempDir, sessionManager => {
-			sessionManager.appendModelChange("openai-codex/gpt-5.5");
-			appendStaleAssistantTurn(sessionManager, assistantText, {
-				api: "openai-codex-responses",
-				provider: "openai-codex",
-				model: "gpt-5.5",
-			});
+			sessionManager.appendModelChange(modelSelector(codexModel));
+			appendStaleAssistantTurn(sessionManager, assistantText, codexModel);
 		});
 
 		const reloadedSessionManager = await SessionManager.open(sessionFile, tempDir);
-		const { session } = await createSessionHarness(tempDir, reloadedSessionManager, {
-			provider: "openai-codex",
-			modelId: "gpt-5.5",
-		});
+		const { session } = await createSessionHarness(tempDir, reloadedSessionManager, codexModel);
 		sessions.push(session);
 
 		const closeSpy = vi.fn();
@@ -507,8 +492,8 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 
 		expect(closeSpy).not.toHaveBeenCalled();
 		expect(session.providerSessionState.size).toBe(1);
-		expect(session.model?.provider).toBe("openai-codex");
-		expect(session.model?.id).toBe("gpt-5.5");
+		expect(session.model?.provider).toBe(codexModel.provider);
+		expect(session.model?.id).toBe(codexModel.id);
 		expectAssistantReplayMetadataPreserved(findRuntimeAssistant(session, assistantText));
 	});
 
@@ -563,19 +548,12 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		const assistantText = "Reloaded content change response";
 
 		const { sessionFile } = await createPersistedSession(tempDir, sessionManager => {
-			sessionManager.appendModelChange("openai-codex/gpt-5.5");
-			appendStaleAssistantTurn(sessionManager, assistantText, {
-				api: "openai-codex-responses",
-				provider: "openai-codex",
-				model: "gpt-5.5",
-			});
+			sessionManager.appendModelChange(modelSelector(codexModel));
+			appendStaleAssistantTurn(sessionManager, assistantText, codexModel);
 		});
 
 		const reloadedSessionManager = await SessionManager.open(sessionFile, tempDir);
-		const { session } = await createSessionHarness(tempDir, reloadedSessionManager, {
-			provider: "openai-codex",
-			modelId: "gpt-5.5",
-		});
+		const { session } = await createSessionHarness(tempDir, reloadedSessionManager, codexModel);
 		sessions.push(session);
 
 		const closeSpy = vi.fn();
@@ -594,8 +572,8 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 
 		expect(closeSpy).toHaveBeenCalledTimes(1);
 		expect(session.providerSessionState.size).toBe(0);
-		expect(session.model?.provider).toBe("openai-codex");
-		expect(session.model?.id).toBe("gpt-5.5");
+		expect(session.model?.provider).toBe(codexModel.provider);
+		expect(session.model?.id).toBe(codexModel.id);
 		expect(
 			session.messages.some(
 				message => message.role === "user" && getTextContent(message) === "Externally appended follow-up",
@@ -609,34 +587,27 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		const assistantText = "Reloaded model change response";
 
 		const { sessionFile } = await createPersistedSession(tempDir, sessionManager => {
-			sessionManager.appendModelChange("openai-codex/gpt-5.5");
-			appendStaleAssistantTurn(sessionManager, assistantText, {
-				api: "openai-codex-responses",
-				provider: "openai-codex",
-				model: "gpt-5.5",
-			});
+			sessionManager.appendModelChange(modelSelector(codexModel));
+			appendStaleAssistantTurn(sessionManager, assistantText, codexModel);
 		});
 
 		const reloadedSessionManager = await SessionManager.open(sessionFile, tempDir);
-		const { session } = await createSessionHarness(tempDir, reloadedSessionManager, {
-			provider: "openai-codex",
-			modelId: "gpt-5.5",
-		});
+		const { session } = await createSessionHarness(tempDir, reloadedSessionManager, codexModel);
 		sessions.push(session);
 
 		const closeSpy = vi.fn();
 		session.providerSessionState.set("openai-codex-responses", { close: closeSpy } satisfies ProviderSessionState);
 
 		const mutatedSessionManager = await SessionManager.open(sessionFile, tempDir);
-		mutatedSessionManager.appendModelChange("openai/gpt-5-mini");
+		mutatedSessionManager.appendModelChange(modelSelector(openaiModel));
 		await mutatedSessionManager.flush();
-		expect(mutatedSessionManager.buildSessionContext().models.default).toBe("openai/gpt-5-mini");
+		expect(mutatedSessionManager.buildSessionContext().models.default).toBe(modelSelector(openaiModel));
 		await mutatedSessionManager.close();
 
 		await session.reload();
 
-		expect(session.model?.provider).toBe("openai");
-		expect(session.model?.id).toBe("gpt-5-mini");
+		expect(session.model?.provider).toBe(openaiModel.provider);
+		expect(session.model?.id).toBe(openaiModel.id);
 		expect(closeSpy).toHaveBeenCalledTimes(1);
 		expect(session.providerSessionState.size).toBe(0);
 		expectAssistantReplayMetadataPreserved(findRuntimeAssistant(session, assistantText));
@@ -648,7 +619,7 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		const assistantText = "Reloaded openai responses model change";
 
 		const { sessionFile } = await createPersistedSession(tempDir, sessionManager => {
-			sessionManager.appendModelChange("openai/gpt-5-mini");
+			sessionManager.appendModelChange(modelSelector(openaiModel));
 			appendStaleAssistantTurn(sessionManager, assistantText);
 		});
 
@@ -660,15 +631,15 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		session.providerSessionState.set("openai-responses:openai", { close: closeSpy } satisfies ProviderSessionState);
 
 		const mutatedSessionManager = await SessionManager.open(sessionFile, tempDir);
-		mutatedSessionManager.appendModelChange("openai/gpt-5.4-mini");
+		mutatedSessionManager.appendModelChange(modelSelector(alternateOpenaiModel));
 		await mutatedSessionManager.flush();
-		expect(mutatedSessionManager.buildSessionContext().models.default).toBe("openai/gpt-5.4-mini");
+		expect(mutatedSessionManager.buildSessionContext().models.default).toBe(modelSelector(alternateOpenaiModel));
 		await mutatedSessionManager.close();
 
 		await session.reload();
 
-		expect(session.model?.provider).toBe("openai");
-		expect(session.model?.id).toBe("gpt-5.4-mini");
+		expect(session.model?.provider).toBe(alternateOpenaiModel.provider);
+		expect(session.model?.id).toBe(alternateOpenaiModel.id);
 		expect(closeSpy).toHaveBeenCalledTimes(1);
 		expect(session.providerSessionState.size).toBe(0);
 		expectAssistantReplayMetadataSanitized(findRuntimeAssistant(session, assistantText));
@@ -682,6 +653,8 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		sessions.push(session);
 
 		const { sessionFile } = await createPersistedSession(tempDir, sessionManager => {
+			// Copilot has no credentials here; record the model the switch restores.
+			sessionManager.appendModelChange(modelSelector(openaiModel));
 			appendStaleAssistantTurn(sessionManager, "Unreadable assistant snapshot");
 		});
 		const sessionDir = path.dirname(sessionFile);
@@ -715,6 +688,8 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 		sessions.push(session);
 
 		const { sessionFile } = await createPersistedSession(tempDir, sessionManager => {
+			// Copilot has no credentials here; record the model the switch restores.
+			sessionManager.appendModelChange(modelSelector(openaiModel));
 			sessionManager.appendMessage({
 				role: "user",
 				content: "Older summary",
@@ -756,9 +731,9 @@ describe("AgentSession OpenAI Responses replay boundaries", () => {
 			const mainAssistantId = sessionManager.appendMessage({
 				role: "assistant",
 				content: [{ type: "text", text: "Main branch" }],
-				api: "openai-responses",
-				provider: "openai",
-				model: "gpt-5-mini",
+				api: openaiModel.api,
+				provider: openaiModel.provider,
+				model: openaiModel.id,
 				usage: createUsage(),
 				stopReason: "stop",
 				timestamp: Date.now() - 4,

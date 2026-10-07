@@ -49,7 +49,8 @@ import {
 	type AgentMetrics,
 	type AggregateMetrics,
 	aggregateMetrics,
-	progressMetrics,
+	hubFallbackStatsSession,
+	hubRowMetrics,
 	projectAgentTree,
 	STATUS_ORDER,
 } from "./agent-hub-projection";
@@ -299,6 +300,7 @@ export interface AgentHubDeps<TRecord extends AgentRecordLike = AgentRecordLike>
 	/** Mirrors the main transcript's thinking-block visibility. */
 	hideThinkingBlock?: () => boolean;
 	proseOnlyThinking?: () => boolean;
+	expandThinkingBlocks?: () => boolean;
 	/** Keys toggling tool output expansion (app.tools.expand). */
 	expandKeys?: KeyId[];
 	/** Focus the main view on this agent's live session (ctx.focusAgentSession). When absent (collab guest, tests), Enter opens the in-hub chat view instead. */
@@ -444,6 +446,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 	#cwd: string;
 	#hideThinkingBlock: (() => boolean) | undefined;
 	#proseOnlyThinking: (() => boolean) | undefined;
+	#expandThinkingBlocks: (() => boolean) | undefined;
 	#expandKeys: KeyId[];
 	#focusAgent: ((id: string) => Promise<void>) | undefined;
 
@@ -489,6 +492,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		this.#cwd = deps.cwd ?? getProjectDir();
 		this.#hideThinkingBlock = deps.hideThinkingBlock;
 		this.#proseOnlyThinking = deps.proseOnlyThinking;
+		this.#expandThinkingBlocks = deps.expandThinkingBlocks;
 		this.#expandKeys = deps.expandKeys ?? ["ctrl+o"];
 		this.#focusAgent = deps.focusAgent;
 
@@ -638,6 +642,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			cwd: this.#cwd,
 			hideThinkingBlock: this.#hideThinkingBlock,
 			proseOnlyThinking: this.#proseOnlyThinking,
+			expandThinkingBlocks: this.#expandThinkingBlocks,
 			expandKeys: this.#expandKeys,
 			hubKeys: this.#hubKeys,
 			requestRender: this.#requestRender,
@@ -1584,7 +1589,8 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		for (const ref of rosterRows) this.#statusCounts[ref.status]++;
 		this.#refreshAggregate();
 		this.#refreshActivityData(rosterRows);
-		this.#refreshActivityRows();
+		// The 2,000-row activity query only feeds the Activity tab; switching to it refreshes.
+		if (this.#section === "activity") this.#refreshActivityRows();
 	}
 
 	#refreshActivityData(refs: readonly TRecord[]): void {
@@ -1615,7 +1621,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 		void Promise.all(pending)
 			.then(() => {
 				if (this.#disposed || generation !== this.#activitySyncGeneration) return;
-				this.#refreshActivityRows();
+				if (this.#section === "activity") this.#refreshActivityRows();
 				this.#requestRender();
 			})
 			.catch(() => {
@@ -1661,19 +1667,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 	}
 
 	#metricsFor(ref: TRecord, observed: ObservableSession | undefined): AgentMetrics | undefined {
-		if (observed?.progress) return progressMetrics(observed);
-		if (ref.history?.metrics) return ref.history.metrics;
-		const session = this.#fallbackStatsSession(ref, observed);
-		return session ? this.#sessionMetrics.get(session)?.metrics : undefined;
-	}
-
-	#fallbackStatsSession(
-		ref: TRecord,
-		observed: ObservableSession | undefined,
-	): NonNullable<TRecord["session"]> | undefined {
-		if (observed?.progress) return undefined;
-		const session = ref.session;
-		return session && typeof session.getSessionStats === "function" ? session : undefined;
+		return hubRowMetrics(ref, observed, this.#sessionMetrics);
 	}
 
 	// ========================================================================
@@ -2009,7 +2003,7 @@ export class AgentHubOverlayComponent<TRecord extends AgentRecordLike = AgentRec
 			rows: this.#rows,
 			observedById: this.#observedById,
 			metricsFor: (ref, observed) => this.#metricsFor(ref, observed),
-			fallbackStatsSession: (ref, observed) => this.#fallbackStatsSession(ref, observed),
+			fallbackStatsSession: hubFallbackStatsSession,
 			sessionMetrics: this.#sessionMetrics,
 			refreshFallback,
 		});

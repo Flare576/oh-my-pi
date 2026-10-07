@@ -9,6 +9,7 @@ import type { AgentSource } from "@oh-my-pi/pi-tui/tools/task";
 import type { ConfiguredThinkingLevel } from "@oh-my-pi/pi-tui/thinking";
 import type { TodoItem } from "@oh-my-pi/pi-tui/tools/todo";
 import type { CustomMessage } from "./messages";
+import type { CacheWarmingRefreshEnd, CacheWarmingRefreshStart } from "./cache-warmer";
 
 /** Session-specific events that extend the core AgentEvent. */
 export type AgentSessionEvent =
@@ -59,6 +60,8 @@ export type AgentSessionEvent =
 			finalError?: string;
 			retryErrors?: RetryErrorUpdate[];
 	  }
+	| ({ type: "cache_warming_start" } & CacheWarmingRefreshStart)
+	| ({ type: "cache_warming_end" } & CacheWarmingRefreshEnd)
 	| { type: "retry_fallback_applied"; from: string; to: string; role: string; reason?: string }
 	| { type: "retry_fallback_succeeded"; model: string; role: string }
 	| { type: "model_changed" }
