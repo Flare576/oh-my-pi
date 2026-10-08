@@ -50,6 +50,7 @@ function createHandle(opts?: { newCwd?: string }) {
 			getLastAgentName: vi.fn(() => undefined),
 			getSessionName: vi.fn(() => "test-session"),
 			getSessionFile: vi.fn(() => "/tmp/original-project/sessions/session.jsonl"),
+			getSessionDir: vi.fn(() => "/tmp/original-project/sessions"),
 		},
 		applyCwdChange,
 		chatContainer: { clear: vi.fn() },
