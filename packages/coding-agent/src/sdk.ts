@@ -4695,6 +4695,12 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				logger.warn(
 					`--agent: no primary agent named "${options.initialAgentName}" found; falling back to first primary`,
 				);
+				// Visible in the TUI too: the log alone is easy to miss, and a typo here
+				// silently starts the session as a different persona.
+				session.emitNotice(
+					"warning",
+					`--agent "${sanitizeStatusText(options.initialAgentName)}" is not a primary agent — using the default persona instead`,
+				);
 			}
 			// Restore from the last session stamp only when no --agent flag was
 			// given at all. An invalid --agent (typo/subagent name) must not
