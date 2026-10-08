@@ -9826,14 +9826,6 @@ export class AgentSession implements SettingsScope {
 
 			this.sessionManager.appendThinkingLevelChange(this.thinkingLevel, this.configuredThinkingLevel());
 			this.sessionManager.appendServiceTierChange(this.#models.serviceTierEntry());
-			// Record the carry-over model so resume can restore the exact model that
-			// produced turns in this session. mode: "fresh" keeps the in-memory model
-			// intact, but without this entry getRestorableSessionModels returns nothing
-			// and resume defaults to whatever the startup-time model is.
-			const currentModel = this.model;
-			if (currentModel) {
-				this.sessionManager.appendModelChange(`${currentModel.provider}/${currentModel.id}`);
-			}
 			// Mirror the thinking/serviceTier pattern: apply and record the default persona
 			// for fresh-session semantics (/new is a clean slate — resolves to first primary).
 			// mode: "fresh" — if this default persona differs from the one just active,
@@ -9852,6 +9844,18 @@ export class AgentSession implements SettingsScope {
 			advisorRecordersDetached = false;
 			this.#reconnectToAgent();
 			await this.#reconcileModeAfterTransition();
+			// Record the carry-over model so resume can restore the exact model that
+			// produced turns in this session. mode: "fresh" keeps the in-memory model
+			// intact, but without this entry getRestorableSessionModels returns nothing
+			// and resume defaults to whatever the startup-time model is. Recorded after
+			// persona application and mode reconciliation so it names the model actually
+			// in effect: reconciling a plan-mode exit restores the model from this
+			// session's (still empty) record, so pre-filling it with the plan model would
+			// pin that model into the new session (issue #14653).
+			const currentModel = this.model;
+			if (currentModel) {
+				this.sessionManager.appendModelChange(`${currentModel.provider}/${currentModel.id}`);
+			}
 			// Drop the process-lifetime context-file cache so the rebuild re-reads
 			// AGENTS.md and friends from disk: the user may have edited them since
 			// the previous session started, and refreshBaseSystemPrompt() re-runs
