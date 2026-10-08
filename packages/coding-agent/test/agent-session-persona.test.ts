@@ -141,6 +141,48 @@ describe("AgentSession persona swap", () => {
 		await session.applyAgentPersona(makePersona("beta", "HOW-beta"));
 		expect(session.systemPrompt).toEqual(["initial", "mcp-tool-instructions", "HOW-beta"]);
 	});
+
+	it("replays a startup notice to the rendering subscriber when an earlier subscriber already drained it", async () => {
+		await createSession();
+		// Emitted during session creation, before anything subscribes.
+		session.emitNotice("warning", "startup problem");
+		// A controller built inside createAgentSession (e.g. autolearn) subscribes first and
+		// consumes the queue without rendering it.
+		session.subscribe(() => {});
+
+		const rendered: string[] = [];
+		session.subscribe(
+			event => {
+				if (event.type === "notice") rendered.push(event.message);
+			},
+			{ replayStartupNotices: true },
+		);
+		expect(rendered).toEqual(["startup problem"]);
+
+		// Replay is one-time: a later re-subscribe (mode re-attach) must not repeat stale notices.
+		const resubscribed: string[] = [];
+		session.subscribe(
+			event => {
+				if (event.type === "notice") resubscribed.push(event.message);
+			},
+			{ replayStartupNotices: true },
+		);
+		expect(resubscribed).toEqual([]);
+	});
+
+	it("delivers a startup notice once when the rendering subscriber is the first to subscribe", async () => {
+		await createSession();
+		session.emitNotice("warning", "startup problem");
+
+		const rendered: string[] = [];
+		session.subscribe(
+			event => {
+				if (event.type === "notice") rendered.push(event.message);
+			},
+			{ replayStartupNotices: true },
+		);
+		expect(rendered).toEqual(["startup problem"]);
+	});
 });
 
 describe("applyAgentPersona — model behavior", () => {

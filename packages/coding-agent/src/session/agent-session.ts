@@ -794,6 +794,12 @@ export class AgentSession implements SettingsScope {
 	#eventListeners: AgentSessionEventListener[] = [];
 	/** Notices emitted before the first subscriber is registered; drained on first subscribe(). */
 	#startupNoticeQueue: Array<Extract<AgentSessionEvent, { type: "notice" }>> = [];
+	/**
+	 * Startup notices already drained to a first subscriber that did not ask for them
+	 * (controllers constructed during session creation subscribe before any mode does).
+	 * Kept so the first subscriber that renders notices can replay them once.
+	 */
+	#drainedStartupNotices: Array<Extract<AgentSessionEvent, { type: "notice" }>> = [];
 	#activeToolExecutionUpdates = new Map<string, Extract<AgentSessionEvent, { type: "tool_execution_update" }>>();
 	#runStateListeners = new Set<(state: "running" | "idle") => void>();
 	/** Epoch ms the current run went `running`; undefined while idle. */
@@ -5072,7 +5078,7 @@ export class AgentSession implements SettingsScope {
 	 * Session persistence is handled internally (saves messages on message_end).
 	 * Multiple listeners can be added. Returns unsubscribe function for this listener.
 	 */
-	subscribe(listener: AgentSessionEventListener): () => void {
+	subscribe(listener: AgentSessionEventListener, options?: { replayStartupNotices?: boolean }): () => void {
 		const wasEmpty = this.#eventListeners.length === 0;
 		// Copy-on-write: `#emit` iterates the array it read without copying it.
 		this.#eventListeners = [...this.#eventListeners, listener];
@@ -5080,9 +5086,16 @@ export class AgentSession implements SettingsScope {
 		// startup persona model failure before interactive mode subscribes).
 		if (wasEmpty && this.#startupNoticeQueue.length > 0) {
 			const queued = this.#startupNoticeQueue.splice(0);
+			if (!options?.replayStartupNotices) this.#drainedStartupNotices.push(...queued);
 			for (const event of queued) {
 				this.#emit(event);
 			}
+		}
+		// The first subscriber is usually an internal controller that ignores notices,
+		// so a subscriber that renders them (interactive mode) opts into a one-time
+		// replay of what that first drain consumed.
+		if (options?.replayStartupNotices) {
+			for (const event of this.#drainedStartupNotices.splice(0)) listener(event);
 		}
 		// Return unsubscribe function for this specific listener
 		return () => {
@@ -5661,6 +5674,7 @@ export class AgentSession implements SettingsScope {
 		for (const dispose of this.#disposers.splice(0)) dispose();
 		this.#eventListeners = [];
 		this.#startupNoticeQueue = [];
+		this.#drainedStartupNotices = [];
 		this.#runStateListeners.clear();
 		this.#sessionChangeCallbacks.clear();
 
