@@ -157,7 +157,18 @@ export const eventDefs = {
 		"The active persona changed; `personaName` is null when it was explicitly cleared.",
 	),
 	QueueUpdateEvent: doc(
-		{ type: "'queue_update'", steering: "string[]", followUp: "string[]" },
+		{
+			type: "'queue_update'",
+			steering: "string[]",
+			followUp: "string[]",
+			liveSteered: absentAs(
+				doc(
+					"number.integer",
+					"Leading `steering` entries are live steering already sent into the streaming response; `remove_queued_message` cannot reach them.",
+				),
+				0,
+			),
+		},
 		"Coalesced snapshot of the displayable steering/follow-up queue, sent whenever it changes.",
 	),
 

@@ -31,6 +31,7 @@ import { containsMagicKeyword } from "@oh-my-pi/pi-tui/prompt/magic-keywords";
 import type { MagicKeywordId } from "../modes/magic-keywords";
 import {
 	AUTO_THINKING,
+	automaticThinkingLevel,
 	type ConfiguredThinkingLevel,
 	clampAutoThinkingEffort,
 	clampThinkingLevelToCeiling,
@@ -583,7 +584,9 @@ export class ModelControls {
 	 */
 	#reapplyThinkingLevel(preferredDefault?: ThinkingLevel, record: boolean = true): void {
 		this.setThinkingLevel(
-			this.#autoThinking ? AUTO_THINKING : (preferredDefault ?? this.#thinkingLevel),
+			this.#autoThinking
+				? AUTO_THINKING
+				: automaticThinkingLevel(this.#model, preferredDefault ?? this.#thinkingLevel),
 			false,
 			record,
 		);
@@ -598,6 +601,8 @@ export class ModelControls {
 			ceiling === undefined
 				? efforts
 				: efforts.filter(level => THINKING_EFFORTS.indexOf(level) <= THINKING_EFFORTS.indexOf(ceiling));
+		// Auto never opts an unverified model into thinking; only a concrete pick does.
+		if (this.#model.thinking?.unverified) return [ThinkingLevel.Off, ...selectable];
 		return [ThinkingLevel.Off, AUTO_THINKING, ...selectable];
 	}
 
@@ -632,7 +637,7 @@ export class ModelControls {
 	 */
 	async applyAutoThinkingLevel(promptText: string, generation: number, solutionSpace?: string): Promise<void> {
 		const model = this.#model;
-		if (!model?.reasoning) return;
+		if (!model?.reasoning || model.thinking?.unverified) return;
 		// Models with reasoning but no controllable effort surface (devin-agent
 		// Cascade routes effort via sibling model ids, not a wire param) have
 		// nothing to pick — skip classification rather than discard its result.
