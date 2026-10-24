@@ -334,6 +334,7 @@ export class BashRunner {
 				destination.parentId = destination.manager.appendMessageToBranch(
 					message,
 					destination.parentId,
+					undefined,
 					personaName,
 				);
 				break;
