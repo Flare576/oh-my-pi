@@ -4,6 +4,7 @@ import type { Model } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { lookup } from "@oh-my-pi/pi-coding-agent/config/registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { clearOmpExtensionCliRoots } from "@oh-my-pi/pi-coding-agent/discovery/omp-extension-roots";
 import { createAcpConnection } from "@oh-my-pi/pi-coding-agent/modes/acp/acp-mode";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import type { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
@@ -150,6 +151,9 @@ class LazyFakeSession {
 	setActiveToolsByName(): void {}
 	setClientBridge(): void {}
 	setMcpServerInstructionsSource(): void {}
+	registerSessionChangeCallback(): () => void {
+		return () => {};
+	}
 	getPlanModeState(): undefined {
 		return undefined;
 	}
@@ -176,6 +180,11 @@ async function closeTransport(writable: WritableStream<unknown>): Promise<void> 
 	}
 	await Promise.allSettled([writable.close()]);
 }
+
+// `runRootCommand` registers the CLI's extension roots (`--no-extensions` → explicit-only) process-wide.
+afterEach(() => {
+	clearOmpExtensionCliRoots();
+});
 
 describe("ACP lazy startup", () => {
 	beforeEach(() => {
