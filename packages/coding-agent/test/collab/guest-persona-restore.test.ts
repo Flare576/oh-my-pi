@@ -65,6 +65,7 @@ function makeContext(setReplicaPersonaName: (name: string | null | undefined) =>
 		},
 		statusContainer: { clear: () => {} },
 		pendingMessagesContainer: { clear: () => {} },
+		pendingShellContainer: { clear: () => {} },
 		compactionQueuedMessages: [],
 		streamingComponent: undefined,
 		streamingMessage: undefined,
